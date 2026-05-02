@@ -2,13 +2,14 @@ import streamlit as st
 import pandas as pd
 import sqlite3
 from datetime import datetime, timedelta
+from fpdf import FPDF
+import io
 
 # ==========================================
 # 1. DATABASE SYSTEM (v16)
 # ==========================================
 @st.cache_resource
 def get_connection():
-    # v16 includes columns for order IDs and expiry tracking
     conn = sqlite3.connect('kelly_ai_v16.db', check_same_thread=False)
     return conn
 
@@ -28,15 +29,55 @@ def init_db():
 init_db()
 
 # ==========================================
-# 2. UI SETUP (Mobile Optimized)
+# 2. RECEIPT GENERATOR FUNCTION
+# ==========================================
+def create_receipt_pdf(data):
+    pdf = FPDF()
+    pdf.add_page()
+    
+    # Header
+    pdf.set_font("Helvetica", 'B', 16)
+    pdf.cell(190, 10, "KELLY AI PREMIUM TOOLS", ln=True, align='C')
+    pdf.set_font("Helvetica", '', 10)
+    pdf.cell(190, 10, f"Date: {data['purchase_date']}", ln=True, align='C')
+    pdf.ln(10)
+    
+    # Body
+    pdf.set_font("Helvetica", 'B', 12)
+    pdf.cell(190, 10, "OFFICIAL PURCHASE RECEIPT", ln=True, align='L')
+    pdf.set_font("Helvetica", '', 11)
+    pdf.ln(5)
+    
+    details = [
+        ("Order Number", str(data['g2g_order_number'])),
+        ("Customer Name", str(data['customer_name'])),
+        ("Product", str(data['product_name'])),
+        ("Amount Paid", f"N{data['amount_paid_naira']:,.2f}"),
+        ("Expiry Date", str(data['expiry_date']))
+    ]
+    
+    for label, val in details:
+        pdf.set_font("Helvetica", 'B', 11)
+        pdf.cell(50, 10, f"{label}:", border=0)
+        pdf.set_font("Helvetica", '', 11)
+        pdf.cell(140, 10, f"{val}", ln=True, border=0)
+    
+    pdf.ln(20)
+    pdf.set_font("Helvetica", 'I', 10)
+    pdf.cell(190, 10, "Thank you for your patronage! Stay Premium.", align='C')
+    
+    return pdf.output(dest='S').encode('latin-1', 'replace')
+
+# ==========================================
+# 3. UI SETUP
 # ==========================================
 st.set_page_config(page_title="Kelly AI Ultimate", layout="wide")
-st.title("💰 Kelly AI Sales & Inventory")
+st.title("💰 Kelly AI Management Suite")
 
-tab1, tab2, tab3, tab4 = st.tabs(["➕ New Sale", "🔍 Search & Manage", "📊 Reports", "🚩 Vendor Tracker"])
+tabs = st.tabs(["➕ New Sale", "🔍 Search & Manage", "📈 Insights", "📊 Reports", "🚩 Vendors"])
 
 # --- TAB 1: NEW SALE ---
-with tab1:
+with tabs[0]:
     st.header("Record Transaction")
     with st.form("sale_form", clear_on_submit=True):
         col1, col2 = st.columns(2)
@@ -63,70 +104,77 @@ with tab1:
                             VALUES (?,?,?,?,?,?,?,?,?,?,?)''', 
                          (cust, prod, paid, usd, rate, profit, p_date, e_date, order_no, "Active", vendor))
             conn.commit()
-            st.success("Sale Recorded Successfully!")
+            st.success("Sale Recorded!")
             st.rerun()
 
-# --- TAB 2: SEARCH & EXPIRY TRACKING ---
-with tab2:
-    st.header("Inventory & Expiry Management")
+# --- TAB 2: SEARCH & MANAGE & RECEIPTS ---
+with tabs[1]:
+    st.header("Inventory & Receipts")
     df = pd.read_sql("SELECT * FROM sales", get_connection())
     
     if not df.empty:
-        df['expiry_date'] = pd.to_datetime(df['expiry_date']).dt.date
-        today = datetime.now().date()
-
-        # Logic for Expiry Highlighting
-        def highlight_expiry(row):
-            diff = (row['expiry_date'] - today).days
-            if row['status'] in ["Issue", "Refunded"]: return ['background-color: #ffcccc'] * len(row)
-            if diff < 0: return ['background-color: #ff4b4b'] * len(row) # Red for Expired
-            if 0 <= diff <= 3: return ['background-color: #ffaa00'] * len(row) # Orange for 3-day notice
-            return [''] * len(row)
-
+        # Search
         search = st.text_input("🔍 Search Name or Order #")
         if search:
             df = df[(df['customer_name'].str.contains(search, case=False)) | 
                     (df['g2g_order_number'].str.contains(search, case=False))]
         
-        st.write("💡 **Orange**: 3 Days Left | **Red**: Expired")
-        st.dataframe(df.style.apply(highlight_expiry, axis=1), use_container_width=True)
+        st.dataframe(df, use_container_width=True)
         
         st.divider()
-        col_upd, col_del = st.columns(2)
-        with col_upd:
-            u_id = st.number_input("ID # to Update", min_value=1, key="u_id")
-            new_stat = st.selectbox("Status", ["Active", "Issue", "Refunded", "Expired"], key="u_stat")
-            if st.button("Update Status"):
-                get_connection().execute("UPDATE sales SET status=? WHERE id=?", (new_stat, u_id))
-                get_connection().commit()
-                st.rerun()
-        with col_del:
-            d_id = st.number_input("ID # to Delete", min_value=1, key="d_id")
-            if st.button("🗑️ Delete Permanently"):
+        c1, c2 = st.columns(2)
+        with c1:
+            st.subheader("🖨️ Generate Receipt")
+            r_id = st.number_input("Enter ID for Receipt", min_value=1, key="rec_id")
+            if st.button("Prepare PDF"):
+                record = df[df['id'] == r_id].iloc[0]
+                pdf_bytes = create_receipt_pdf(record)
+                st.download_button("Download PDF Receipt", pdf_bytes, f"Receipt_{record['customer_name']}.pdf", "application/pdf")
+        
+        with c2:
+            st.subheader("🗑️ Delete / Update")
+            d_id = st.number_input("Enter ID #", min_value=1, key="man_id")
+            if st.button("Delete Permanentely"):
                 get_connection().execute("DELETE FROM sales WHERE id=?", (d_id,))
                 get_connection().commit()
                 st.rerun()
 
-# --- TAB 3: REPORTS ---
-with tab3:
-    st.header("Financials")
-    df_f = pd.read_sql("SELECT profit, purchase_date FROM sales", get_connection())
+# --- TAB 3: CUSTOMER INSIGHTS (NEW) ---
+with tabs[2]:
+    st.header("📈 Customer Growth Tracking")
+    df_in = pd.read_sql("SELECT customer_name, purchase_date FROM sales", get_connection())
+    
+    if not df_in.empty:
+        total_purchases = len(df_in)
+        # Unique customer count (Doesn't double count names)
+        unique_customers = df_in['customer_name'].nunique()
+        
+        col_in1, col_in2 = st.columns(2)
+        col_in1.metric("Total Successful Sales", total_purchases)
+        col_in2.metric("Unique Customer Base", unique_customers)
+        
+        st.write(f"On average, your customers buy **{total_purchases/unique_customers:.1f}** items each.")
+    else:
+        st.info("No data yet.")
+
+# --- TAB 4: FINANCIAL REPORTS & BACKUP ---
+with tabs[3]:
+    st.header("📊 Financial Reports")
+    df_f = pd.read_sql("SELECT * FROM sales", get_connection())
     if not df_f.empty:
         df_f['purchase_date'] = pd.to_datetime(df_f['purchase_date']).dt.date
         today = datetime.now().date()
         daily = df_f[df_f['purchase_date'] == today]['profit'].sum()
         st.metric("Today's Profit", f"N{daily:,.2f}")
-        st.dataframe(df_f)
+        
+        csv = df_f.to_csv(index=False).encode('utf-8')
+        st.download_button("💾 Backup Database (CSV)", csv, "kelly_backup.csv", "text/csv")
 
-# --- TAB 4: VENDOR TRACKER ---
-with tab4:
-    st.header("G2G Vendor Performance")
-    # Filters only for problematic accounts to specify the customer and order ID
-    vendor_query = """SELECT vendor_name, g2g_order_number, customer_name, product_name, status 
-                      FROM sales WHERE status IN ('Issue', 'Refunded')"""
-    df_v = pd.read_sql(vendor_query, get_connection())
+# --- TAB 5: VENDOR TRACKER ---
+with tabs[4]:
+    st.header("🚩 Vendor Issue Tracker")
+    df_v = pd.read_sql("SELECT vendor_name, g2g_order_number, customer_name, status FROM sales WHERE status != 'Active'", get_connection())
     if not df_v.empty:
-        st.warning("Accounts requiring vendor contact:")
         st.table(df_v)
     else:
-        st.success("No vendor issues found!")
+        st.success("No issues reported!")
