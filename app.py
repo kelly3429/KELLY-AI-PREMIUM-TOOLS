@@ -4,12 +4,12 @@ import sqlite3
 from datetime import datetime, timedelta
 
 # ==========================================
-# 1. DATABASE SYSTEM (v15)
+# 1. DATABASE SYSTEM (v16)
 # ==========================================
 @st.cache_resource
 def get_connection():
-    # Using v15 to ensure the database starts clean with all required columns
-    conn = sqlite3.connect('kelly_ai_v15.db', check_same_thread=False)
+    # v16 includes columns for order IDs and expiry tracking
+    conn = sqlite3.connect('kelly_ai_v16.db', check_same_thread=False)
     return conn
 
 def init_db():
@@ -20,7 +20,8 @@ def init_db():
                   customer_name TEXT, product_name TEXT, 
                   amount_paid_naira REAL, g2g_cost_usd REAL, 
                   exchange_rate REAL, profit REAL, 
-                  purchase_date DATE, status TEXT, 
+                  purchase_date DATE, expiry_date DATE,
+                  g2g_order_number TEXT, status TEXT, 
                   vendor_name TEXT)''')
     conn.commit()
 
@@ -29,11 +30,10 @@ init_db()
 # ==========================================
 # 2. UI SETUP (Mobile Optimized)
 # ==========================================
-st.set_page_config(page_title="Kelly AI Manager", layout="wide")
-st.title("💰 Kelly AI Sales Tracker")
+st.set_page_config(page_title="Kelly AI Ultimate", layout="wide")
+st.title("💰 Kelly AI Sales & Inventory")
 
-# Tabs are easier to tap than a sidebar on an iPhone
-tab1, tab2, tab3, tab4 = st.tabs(["➕ New Sale", "🔍 Search & Manage", "📊 Reports", "🚩 Vendors"])
+tab1, tab2, tab3, tab4 = st.tabs(["➕ New Sale", "🔍 Search & Manage", "📊 Reports", "🚩 Vendor Tracker"])
 
 # --- TAB 1: NEW SALE ---
 with tab1:
@@ -43,77 +43,90 @@ with tab1:
         with col1:
             cust = st.text_input("Customer Name")
             prod = st.selectbox("Product", ["ChatGPT Plus", "CapCut Pro", "Canva Pro", "Claude Pro", "Super Grok"])
+            order_no = st.text_input("G2G Order Number")
             paid = st.number_input("Customer Paid (NGN)", min_value=0.0)
         with col2:
             usd = st.number_input("G2G Cost (USD)", min_value=0.0)
             rate = st.number_input("Rate (NGN/$)", value=1550.0)
             vendor = st.text_input("G2G Vendor Name")
+            duration = st.number_input("Duration (Days)", value=30)
         
         if st.form_submit_button("Save Sale"):
-            n_cost = usd * rate
-            calc_profit = paid - n_cost
-            today = datetime.now().date()
+            p_date = datetime.now().date()
+            e_date = p_date + timedelta(days=duration)
+            profit = paid - (usd * rate)
             
             conn = get_connection()
             conn.execute('''INSERT INTO sales (customer_name, product_name, amount_paid_naira, 
-                            g2g_cost_usd, exchange_rate, profit, purchase_date, status, vendor_name) 
-                            VALUES (?,?,?,?,?,?,?,?,?)''', 
-                         (cust, prod, paid, usd, rate, calc_profit, today, "Active", vendor))
+                            g2g_cost_usd, exchange_rate, profit, purchase_date, expiry_date, 
+                            g2g_order_number, status, vendor_name) 
+                            VALUES (?,?,?,?,?,?,?,?,?,?,?)''', 
+                         (cust, prod, paid, usd, rate, profit, p_date, e_date, order_no, "Active", vendor))
             conn.commit()
-            st.success(f"Saved! Profit: N{calc_profit:,.2f}")
+            st.success("Sale Recorded Successfully!")
             st.rerun()
 
-# --- TAB 2: SEARCH & DELETE (FIXED) ---
+# --- TAB 2: SEARCH & EXPIRY TRACKING ---
 with tab2:
-    st.header("Inventory Manager")
-    conn = get_connection()
-    df = pd.read_sql("SELECT * FROM sales", conn)
+    st.header("Inventory & Expiry Management")
+    df = pd.read_sql("SELECT * FROM sales", get_connection())
     
-    search = st.text_input("🔍 Search by Name")
-    if search:
-        df = df[df['customer_name'].str.contains(search, case=False)]
-    
-    st.dataframe(df, use_container_width=True)
-    
-    st.divider()
-    # Unique keys prevent "Duplicate Widget ID" errors
-    d_id = st.number_input("Enter ID # to Delete", min_value=1, step=1, key="del_id_input")
-    confirm = st.checkbox("Confirm permanent deletion", key="del_confirm")
-    if st.button("🗑️ Delete Now", key="del_button"):
-        if confirm:
-            conn.execute("DELETE FROM sales WHERE id=?", (d_id,))
-            conn.commit()
-            st.warning(f"Record {d_id} deleted!")
-            st.rerun()
-        else:
-            st.error("Please check the box to confirm.")
+    if not df.empty:
+        df['expiry_date'] = pd.to_datetime(df['expiry_date']).dt.date
+        today = datetime.now().date()
 
-# --- TAB 3: DAILY/WEEKLY/MONTHLY REPORTS ---
+        # Logic for Expiry Highlighting
+        def highlight_expiry(row):
+            diff = (row['expiry_date'] - today).days
+            if row['status'] in ["Issue", "Refunded"]: return ['background-color: #ffcccc'] * len(row)
+            if diff < 0: return ['background-color: #ff4b4b'] * len(row) # Red for Expired
+            if 0 <= diff <= 3: return ['background-color: #ffaa00'] * len(row) # Orange for 3-day notice
+            return [''] * len(row)
+
+        search = st.text_input("🔍 Search Name or Order #")
+        if search:
+            df = df[(df['customer_name'].str.contains(search, case=False)) | 
+                    (df['g2g_order_number'].str.contains(search, case=False))]
+        
+        st.write("💡 **Orange**: 3 Days Left | **Red**: Expired")
+        st.dataframe(df.style.apply(highlight_expiry, axis=1), use_container_width=True)
+        
+        st.divider()
+        col_upd, col_del = st.columns(2)
+        with col_upd:
+            u_id = st.number_input("ID # to Update", min_value=1, key="u_id")
+            new_stat = st.selectbox("Status", ["Active", "Issue", "Refunded", "Expired"], key="u_stat")
+            if st.button("Update Status"):
+                get_connection().execute("UPDATE sales SET status=? WHERE id=?", (new_stat, u_id))
+                get_connection().commit()
+                st.rerun()
+        with col_del:
+            d_id = st.number_input("ID # to Delete", min_value=1, key="d_id")
+            if st.button("🗑️ Delete Permanently"):
+                get_connection().execute("DELETE FROM sales WHERE id=?", (d_id,))
+                get_connection().commit()
+                st.rerun()
+
+# --- TAB 3: REPORTS ---
 with tab3:
-    st.header("Financial Overview")
+    st.header("Financials")
     df_f = pd.read_sql("SELECT profit, purchase_date FROM sales", get_connection())
     if not df_f.empty:
         df_f['purchase_date'] = pd.to_datetime(df_f['purchase_date']).dt.date
         today = datetime.now().date()
-        
         daily = df_f[df_f['purchase_date'] == today]['profit'].sum()
-        week_ago = today - timedelta(days=7)
-        weekly = df_f[df_f['purchase_date'] >= week_ago]['profit'].sum()
-        this_month = today.month
-        monthly = df_f[pd.to_datetime(df_f['purchase_date']).dt.month == this_month]['profit'].sum()
-        
-        c1, c2, c3 = st.columns(3)
-        c1.metric("Today", f"N{daily:,.2f}")
-        c2.metric("Weekly", f"N{weekly:,.2f}")
-        c3.metric("Monthly", f"N{monthly:,.2f}")
-    else:
-        st.info("No sales data yet.")
+        st.metric("Today's Profit", f"N{daily:,.2f}")
+        st.dataframe(df_f)
 
 # --- TAB 4: VENDOR TRACKER ---
 with tab4:
-    st.header("Vendor Accountability")
-    issues = pd.read_sql("SELECT vendor_name, customer_name, status FROM sales WHERE status != 'Active'", get_connection())
-    if not issues.empty:
-        st.table(issues)
+    st.header("G2G Vendor Performance")
+    # Filters only for problematic accounts to specify the customer and order ID
+    vendor_query = """SELECT vendor_name, g2g_order_number, customer_name, product_name, status 
+                      FROM sales WHERE status IN ('Issue', 'Refunded')"""
+    df_v = pd.read_sql(vendor_query, get_connection())
+    if not df_v.empty:
+        st.warning("Accounts requiring vendor contact:")
+        st.table(df_v)
     else:
-        st.success("No issues found!")
+        st.success("No vendor issues found!")
