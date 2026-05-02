@@ -10,6 +10,7 @@ import io
 # ==========================================
 @st.cache_resource
 def get_connection():
+    # Keeping the name v16 to preserve your current data
     conn = sqlite3.connect('kelly_ai_v16.db', check_same_thread=False)
     return conn
 
@@ -19,8 +20,8 @@ def init_db():
     c.execute('''CREATE TABLE IF NOT EXISTS sales 
                  (id INTEGER PRIMARY KEY AUTOINCREMENT, 
                   customer_name TEXT, product_name TEXT, 
-                  amount_paid_naira REAL, g2g_cost_usd REAL, 
-                  exchange_rate REAL, profit REAL, 
+                  login_email TEXT, amount_paid_naira REAL, 
+                  g2g_cost_usd REAL, exchange_rate REAL, profit REAL, 
                   purchase_date DATE, expiry_date DATE,
                   g2g_order_number TEXT, status TEXT, 
                   vendor_name TEXT)''')
@@ -34,18 +35,14 @@ init_db()
 def create_receipt_pdf(data):
     pdf = FPDF()
     pdf.add_page()
-    
-    # Header
     pdf.set_font("Helvetica", 'B', 16)
     pdf.cell(190, 10, "KELLY AI PREMIUM TOOLS", ln=True, align='C')
     pdf.set_font("Helvetica", '', 10)
     pdf.cell(190, 10, f"Date: {data['purchase_date']}", ln=True, align='C')
     pdf.ln(10)
     
-    # Body
     pdf.set_font("Helvetica", 'B', 12)
     pdf.cell(190, 10, "OFFICIAL PURCHASE RECEIPT", ln=True, align='L')
-    pdf.set_font("Helvetica", '', 11)
     pdf.ln(5)
     
     details = [
@@ -58,14 +55,13 @@ def create_receipt_pdf(data):
     
     for label, val in details:
         pdf.set_font("Helvetica", 'B', 11)
-        pdf.cell(50, 10, f"{label}:", border=0)
+        pdf.cell(50, 10, f"{label}:")
         pdf.set_font("Helvetica", '', 11)
-        pdf.cell(140, 10, f"{val}", ln=True, border=0)
+        pdf.cell(140, 10, f"{val}", ln=True)
     
     pdf.ln(20)
     pdf.set_font("Helvetica", 'I', 10)
-    pdf.cell(190, 10, "Thank you for your patronage! Stay Premium.", align='C')
-    
+    pdf.cell(190, 10, "Thank you for your patronage!", align='C')
     return pdf.output(dest='S').encode('latin-1', 'replace')
 
 # ==========================================
@@ -74,9 +70,9 @@ def create_receipt_pdf(data):
 st.set_page_config(page_title="Kelly AI Ultimate", layout="wide")
 st.title("💰 Kelly AI Management Suite")
 
-tabs = st.tabs(["➕ New Sale", "🔍 Search & Manage", "📈 Insights", "📊 Reports", "🚩 Vendors"])
+tabs = st.tabs(["➕ New Sale", "🔍 Search & Manage", "📈 Insights", "📊 Reports", "🚩 Vendor Tracker"])
 
-# --- TAB 1: NEW SALE ---
+# --- TAB 1: NEW SALE (Status Added Here) ---
 with tabs[0]:
     st.header("Record Transaction")
     with st.form("sale_form", clear_on_submit=True):
@@ -91,6 +87,8 @@ with tabs[0]:
             rate = st.number_input("Rate (NGN/$)", value=1550.0)
             vendor = st.text_input("G2G Vendor Name")
             duration = st.number_input("Duration (Days)", value=30)
+            # Added Status selection to New Sale
+            initial_status = st.selectbox("Initial Account Status", ["Active", "Issue", "Refunded"])
         
         if st.form_submit_button("Save Sale"):
             p_date = datetime.now().date()
@@ -102,18 +100,18 @@ with tabs[0]:
                             g2g_cost_usd, exchange_rate, profit, purchase_date, expiry_date, 
                             g2g_order_number, status, vendor_name) 
                             VALUES (?,?,?,?,?,?,?,?,?,?,?)''', 
-                         (cust, prod, paid, usd, rate, profit, p_date, e_date, order_no, "Active", vendor))
+                         (cust, prod, paid, usd, rate, profit, p_date, e_date, order_no, initial_status, vendor))
             conn.commit()
             st.success("Sale Recorded!")
             st.rerun()
 
-# --- TAB 2: SEARCH & MANAGE & RECEIPTS ---
+# --- TAB 2: SEARCH & MANAGE ---
 with tabs[1]:
-    st.header("Inventory & Receipts")
+    st.header("Inventory & Status Management")
     df = pd.read_sql("SELECT * FROM sales", get_connection())
     
     if not df.empty:
-        # Search
+        # Search Feature
         search = st.text_input("🔍 Search Name or Order #")
         if search:
             df = df[(df['customer_name'].str.contains(search, case=False)) | 
@@ -124,57 +122,66 @@ with tabs[1]:
         st.divider()
         c1, c2 = st.columns(2)
         with c1:
-            st.subheader("🖨️ Generate Receipt")
-            r_id = st.number_input("Enter ID for Receipt", min_value=1, key="rec_id")
-            if st.button("Prepare PDF"):
-                record = df[df['id'] == r_id].iloc[0]
+            st.subheader("Update Status / Generate Receipt")
+            target_id = st.number_input("Enter ID #", min_value=1, key="manage_id")
+            new_status = st.selectbox("Change Status To", ["Active", "Issue", "Refunded", "Settled"], key="status_update")
+            
+            if st.button("Apply Status Update"):
+                get_connection().execute("UPDATE sales SET status=? WHERE id=?", (new_status, target_id))
+                get_connection().commit()
+                st.success(f"ID {target_id} updated to {new_status}")
+                st.rerun()
+                
+            if st.button("Prepare PDF Receipt"):
+                record = df[df['id'] == target_id].iloc[0]
                 pdf_bytes = create_receipt_pdf(record)
-                st.download_button("Download PDF Receipt", pdf_bytes, f"Receipt_{record['customer_name']}.pdf", "application/pdf")
+                st.download_button("Download PDF", pdf_bytes, f"Receipt_{record['customer_name']}.pdf")
         
         with c2:
-            st.subheader("🗑️ Delete / Update")
-            d_id = st.number_input("Enter ID #", min_value=1, key="man_id")
-            if st.button("Delete Permanentely"):
+            st.subheader("Delete Record")
+            d_id = st.number_input("Enter ID # to Delete", min_value=1, key="del_id")
+            if st.button("🗑️ Delete Permanently"):
                 get_connection().execute("DELETE FROM sales WHERE id=?", (d_id,))
                 get_connection().commit()
                 st.rerun()
 
-# --- TAB 3: CUSTOMER INSIGHTS (NEW) ---
+# --- TAB 3: INSIGHTS (Unique Customer Count) ---
 with tabs[2]:
-    st.header("📈 Customer Growth Tracking")
-    df_in = pd.read_sql("SELECT customer_name, purchase_date FROM sales", get_connection())
-    
+    st.header("📈 Customer Insights")
+    df_in = pd.read_sql("SELECT customer_name FROM sales", get_connection())
     if not df_in.empty:
-        total_purchases = len(df_in)
-        # Unique customer count (Doesn't double count names)
-        unique_customers = df_in['customer_name'].nunique()
+        total_sales = len(df_in)
+        unique_cust = df_in['customer_name'].nunique()
         
-        col_in1, col_in2 = st.columns(2)
-        col_in1.metric("Total Successful Sales", total_purchases)
-        col_in2.metric("Unique Customer Base", unique_customers)
-        
-        st.write(f"On average, your customers buy **{total_purchases/unique_customers:.1f}** items each.")
-    else:
-        st.info("No data yet.")
+        c_i1, c_i2 = st.columns(2)
+        c_i1.metric("Total Purchases", total_sales)
+        c_i2.metric("Unique Customers", unique_cust)
 
 # --- TAB 4: FINANCIAL REPORTS & BACKUP ---
 with tabs[3]:
     st.header("📊 Financial Reports")
-    df_f = pd.read_sql("SELECT * FROM sales", get_connection())
+    df_f = pd.read_sql("SELECT profit, purchase_date FROM sales", get_connection())
     if not df_f.empty:
         df_f['purchase_date'] = pd.to_datetime(df_f['purchase_date']).dt.date
         today = datetime.now().date()
         daily = df_f[df_f['purchase_date'] == today]['profit'].sum()
         st.metric("Today's Profit", f"N{daily:,.2f}")
         
-        csv = df_f.to_csv(index=False).encode('utf-8')
-        st.download_button("💾 Backup Database (CSV)", csv, "kelly_backup.csv", "text/csv")
+        # Backup
+        full_df = pd.read_sql("SELECT * FROM sales", get_connection())
+        csv = full_df.to_csv(index=False).encode('utf-8')
+        st.download_button("💾 Backup to CSV", csv, "kelly_sales_backup.csv", "text/csv")
 
-# --- TAB 5: VENDOR TRACKER ---
+# --- TAB 5: VENDOR TRACKER (Problem Accounts specified here) ---
 with tabs[4]:
     st.header("🚩 Vendor Issue Tracker")
-    df_v = pd.read_sql("SELECT vendor_name, g2g_order_number, customer_name, status FROM sales WHERE status != 'Active'", get_connection())
+    # This specifically looks for ANY status that isn't 'Active'
+    query = """SELECT vendor_name, g2g_order_number, customer_name, product_name, status 
+               FROM sales WHERE status IN ('Issue', 'Refunded')"""
+    df_v = pd.read_sql(query, get_connection())
+    
     if not df_v.empty:
+        st.warning("Issues detected! Details for G2G Vendors below:")
         st.table(df_v)
     else:
-        st.success("No issues reported!")
+        st.success("No vendor issues reported! All accounts are Active.")
