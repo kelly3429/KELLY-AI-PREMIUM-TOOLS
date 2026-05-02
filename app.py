@@ -10,7 +10,6 @@ import io
 # ==========================================
 @st.cache_resource
 def get_connection():
-    # Keeping the name v16 to preserve your current data
     conn = sqlite3.connect('kelly_ai_v16.db', check_same_thread=False)
     return conn
 
@@ -37,19 +36,14 @@ def create_receipt_pdf(data):
     pdf.add_page()
     pdf.set_font("Helvetica", 'B', 16)
     pdf.cell(190, 10, "KELLY AI PREMIUM TOOLS", ln=True, align='C')
-    pdf.set_font("Helvetica", '', 10)
-    pdf.cell(190, 10, f"Date: {data['purchase_date']}", ln=True, align='C')
     pdf.ln(10)
-    
-    pdf.set_font("Helvetica", 'B', 12)
-    pdf.cell(190, 10, "OFFICIAL PURCHASE RECEIPT", ln=True, align='L')
-    pdf.ln(5)
     
     details = [
         ("Order Number", str(data['g2g_order_number'])),
         ("Customer Name", str(data['customer_name'])),
         ("Product", str(data['product_name'])),
         ("Amount Paid", f"N{data['amount_paid_naira']:,.2f}"),
+        ("Purchase Date", str(data['purchase_date'])),
         ("Expiry Date", str(data['expiry_date']))
     ]
     
@@ -59,9 +53,6 @@ def create_receipt_pdf(data):
         pdf.set_font("Helvetica", '', 11)
         pdf.cell(140, 10, f"{val}", ln=True)
     
-    pdf.ln(20)
-    pdf.set_font("Helvetica", 'I', 10)
-    pdf.cell(190, 10, "Thank you for your patronage!", align='C')
     return pdf.output(dest='S').encode('latin-1', 'replace')
 
 # ==========================================
@@ -70,9 +61,9 @@ def create_receipt_pdf(data):
 st.set_page_config(page_title="Kelly AI Ultimate", layout="wide")
 st.title("💰 Kelly AI Management Suite")
 
-tabs = st.tabs(["➕ New Sale", "🔍 Search & Manage", "📈 Insights", "📊 Reports", "🚩 Vendor Tracker"])
+tabs = st.tabs(["➕ New Sale", "🔍 Search & Manage", "📈 Insights & Restore", "📊 Reports", "🚩 Vendor Tracker"])
 
-# --- TAB 1: NEW SALE (Status Added Here) ---
+# --- TAB 1: NEW SALE (Date Box Added) ---
 with tabs[0]:
     st.header("Record Transaction")
     with st.form("sale_form", clear_on_submit=True):
@@ -82,17 +73,18 @@ with tabs[0]:
             prod = st.selectbox("Product", ["ChatGPT Plus", "CapCut Pro", "Canva Pro", "Claude Pro", "Super Grok"])
             order_no = st.text_input("G2G Order Number")
             paid = st.number_input("Customer Paid (NGN)", min_value=0.0)
+            # ADDED: Manual Date Selection
+            manual_date = st.date_input("Purchase Date", datetime.now())
         with col2:
             usd = st.number_input("G2G Cost (USD)", min_value=0.0)
             rate = st.number_input("Rate (NGN/$)", value=1550.0)
             vendor = st.text_input("G2G Vendor Name")
             duration = st.number_input("Duration (Days)", value=30)
-            # Added Status selection to New Sale
             initial_status = st.selectbox("Initial Account Status", ["Active", "Issue", "Refunded"])
         
         if st.form_submit_button("Save Sale"):
-            p_date = datetime.now().date()
-            e_date = p_date + timedelta(days=duration)
+            # Calculate expiry based on the chosen manual date
+            e_date = manual_date + timedelta(days=duration)
             profit = paid - (usd * rate)
             
             conn = get_connection()
@@ -100,9 +92,9 @@ with tabs[0]:
                             g2g_cost_usd, exchange_rate, profit, purchase_date, expiry_date, 
                             g2g_order_number, status, vendor_name) 
                             VALUES (?,?,?,?,?,?,?,?,?,?,?)''', 
-                         (cust, prod, paid, usd, rate, profit, p_date, e_date, order_no, initial_status, vendor))
+                         (cust, prod, paid, usd, rate, profit, manual_date, e_date, order_no, initial_status, vendor))
             conn.commit()
-            st.success("Sale Recorded!")
+            st.success(f"Sale Recorded for {manual_date}!")
             st.rerun()
 
 # --- TAB 2: SEARCH & MANAGE ---
@@ -111,7 +103,6 @@ with tabs[1]:
     df = pd.read_sql("SELECT * FROM sales", get_connection())
     
     if not df.empty:
-        # Search Feature
         search = st.text_input("🔍 Search Name or Order #")
         if search:
             df = df[(df['customer_name'].str.contains(search, case=False)) | 
@@ -122,14 +113,11 @@ with tabs[1]:
         st.divider()
         c1, c2 = st.columns(2)
         with c1:
-            st.subheader("Update Status / Generate Receipt")
-            target_id = st.number_input("Enter ID #", min_value=1, key="manage_id")
+            target_id = st.number_input("Enter ID # to Manage", min_value=1, key="manage_id")
             new_status = st.selectbox("Change Status To", ["Active", "Issue", "Refunded", "Settled"], key="status_update")
-            
             if st.button("Apply Status Update"):
                 get_connection().execute("UPDATE sales SET status=? WHERE id=?", (new_status, target_id))
                 get_connection().commit()
-                st.success(f"ID {target_id} updated to {new_status}")
                 st.rerun()
                 
             if st.button("Prepare PDF Receipt"):
@@ -138,24 +126,46 @@ with tabs[1]:
                 st.download_button("Download PDF", pdf_bytes, f"Receipt_{record['customer_name']}.pdf")
         
         with c2:
-            st.subheader("Delete Record")
             d_id = st.number_input("Enter ID # to Delete", min_value=1, key="del_id")
             if st.button("🗑️ Delete Permanently"):
                 get_connection().execute("DELETE FROM sales WHERE id=?", (d_id,))
                 get_connection().commit()
                 st.rerun()
 
-# --- TAB 3: INSIGHTS (Unique Customer Count) ---
+# --- TAB 3: INSIGHTS & RESTORE (RE-UPLOAD ADDED HERE) ---
 with tabs[2]:
-    st.header("📈 Customer Insights")
-    df_in = pd.read_sql("SELECT customer_name FROM sales", get_connection())
+    st.header("📈 Growth & Data Restore")
+    df_in = pd.read_sql("SELECT * FROM sales", get_connection())
+    
+    c_i1, c_i2 = st.columns(2)
     if not df_in.empty:
-        total_sales = len(df_in)
-        unique_cust = df_in['customer_name'].nunique()
-        
-        c_i1, c_i2 = st.columns(2)
-        c_i1.metric("Total Purchases", total_sales)
-        c_i2.metric("Unique Customers", unique_cust)
+        c_i1.metric("Total Purchases", len(df_in))
+        c_i2.metric("Unique Customers", df_in['customer_name'].nunique())
+    
+    st.divider()
+    st.subheader("📤 Restore from Backup")
+    st.info("Upload your backup CSV file to add those records back to this app.")
+    
+    uploaded_file = st.file_uploader("Choose your backup CSV file", type="csv")
+    
+    if uploaded_file is not None:
+        if st.button("Process Restore"):
+            backup_df = pd.read_csv(uploaded_file)
+            conn = get_connection()
+            # We loop through the CSV and insert data
+            for index, row in backup_df.iterrows():
+                conn.execute('''INSERT OR IGNORE INTO sales 
+                                (customer_name, product_name, amount_paid_naira, g2g_cost_usd, 
+                                 exchange_rate, profit, purchase_date, expiry_date, g2g_order_number, 
+                                 status, vendor_name) 
+                                VALUES (?,?,?,?,?,?,?,?,?,?,?)''', 
+                             (row['customer_name'], row['product_name'], row['amount_paid_naira'], 
+                              row['g2g_cost_usd'], row['exchange_rate'], row['profit'], 
+                              row['purchase_date'], row['expiry_date'], row['g2g_order_number'], 
+                              row['status'], row['vendor_name']))
+            conn.commit()
+            st.success("Backup successfully integrated!")
+            st.rerun()
 
 # --- TAB 4: FINANCIAL REPORTS & BACKUP ---
 with tabs[3]:
@@ -167,21 +177,17 @@ with tabs[3]:
         daily = df_f[df_f['purchase_date'] == today]['profit'].sum()
         st.metric("Today's Profit", f"N{daily:,.2f}")
         
-        # Backup
+        # Download Button
         full_df = pd.read_sql("SELECT * FROM sales", get_connection())
         csv = full_df.to_csv(index=False).encode('utf-8')
-        st.download_button("💾 Backup to CSV", csv, "kelly_sales_backup.csv", "text/csv")
+        st.download_button("💾 Download Backup (CSV)", csv, f"kelly_backup_{today}.csv", "text/csv")
 
-# --- TAB 5: VENDOR TRACKER (Problem Accounts specified here) ---
+# --- TAB 5: VENDOR TRACKER ---
 with tabs[4]:
-    st.header("🚩 Vendor Issue Tracker")
-    # This specifically looks for ANY status that isn't 'Active'
-    query = """SELECT vendor_name, g2g_order_number, customer_name, product_name, status 
-               FROM sales WHERE status IN ('Issue', 'Refunded')"""
+    st.header("🚩 Vendor Tracker")
+    query = "SELECT vendor_name, g2g_order_number, customer_name, status FROM sales WHERE status != 'Active'"
     df_v = pd.read_sql(query, get_connection())
-    
     if not df_v.empty:
-        st.warning("Issues detected! Details for G2G Vendors below:")
         st.table(df_v)
     else:
-        st.success("No vendor issues reported! All accounts are Active.")
+        st.success("No vendor issues reported!")
