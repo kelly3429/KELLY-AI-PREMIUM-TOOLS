@@ -5,13 +5,14 @@ from datetime import datetime, timedelta
 from fpdf import FPDF
 
 # ==========================================
-# 1. DATABASE SYSTEM (v21)
+# 1. DATABASE SYSTEM (v22)
 # ==========================================
 def get_connection():
-    return sqlite3.connect('kelly_ai_v21.db', check_same_thread=False)
+    return sqlite3.connect('kelly_ai_v22.db', check_same_thread=False)
 
 def init_db():
     with get_connection() as conn:
+        # Sales Table
         conn.execute('''CREATE TABLE IF NOT EXISTS sales 
                      (id INTEGER PRIMARY KEY AUTOINCREMENT, 
                       customer_name TEXT, product_name TEXT, 
@@ -21,6 +22,15 @@ def init_db():
                       purchase_date DATE, expiry_date DATE,
                       g2g_order_number TEXT, status TEXT, 
                       vendor_name TEXT)''')
+        # Tools/Products Table
+        conn.execute('''CREATE TABLE IF NOT EXISTS tool_list 
+                     (tool_name TEXT PRIMARY KEY)''')
+        
+        # Pre-fill with your current tools if empty
+        check = conn.execute("SELECT COUNT(*) FROM tool_list").fetchone()[0]
+        if check == 0:
+            initial_tools = [("ChatGPT Plus",), ("CapCut Pro",), ("Canva Pro",), ("Claude Pro",), ("Grok",)]
+            conn.executemany("INSERT INTO tool_list VALUES (?)", initial_tools)
     conn.commit()
 
 init_db()
@@ -35,7 +45,6 @@ def create_pdf(data):
     pdf.cell(190, 10, "KELLY AI PREMIUM TOOLS - RECEIPT", ln=True, align='C')
     pdf.ln(10)
     pdf.set_font("Arial", '', 12)
-    # Define fields to show the customer
     fields = ['customer_name', 'product_name', 'amount_paid_naira', 'purchase_date', 'expiry_date', 'g2g_order_number']
     for key in fields:
         label = key.replace('_', ' ').title()
@@ -54,11 +63,16 @@ tabs = st.tabs(["➕ New Sale", "📜 History & Manager", "⏰ Expiry Tracker", 
 # --- TAB 1: NEW SALE ---
 with tabs[0]:
     st.header("Record Transaction")
+    
+    # Get Dynamic Tools from Database
+    with get_connection() as conn:
+        tools_db = [r[0] for r in conn.execute("SELECT tool_name FROM tool_list").fetchall()]
+
     with st.form("sale_form", clear_on_submit=True):
         col1, col2 = st.columns(2)
         with col1:
             cust = st.text_input("Customer Name")
-            prod = st.selectbox("Product", ["ChatGPT Plus", "CapCut Pro", "Canva Pro", "Claude Pro", "Grok"])
+            prod = st.selectbox("Product", tools_db if tools_db else ["Add tools in Manager tab"])
             paid = st.number_input("Amount Paid (NGN)", min_value=0.0)
             p_date = st.date_input("Purchase Date", datetime.now())
             vendor_name = st.text_input("Vendor Name")
@@ -79,61 +93,91 @@ with tabs[0]:
                              (cust, prod, acc_email, acc_pass, paid, usd_cost, rate, prof, p_date, exp, order_no, "Active", vendor_name))
             st.success(f"Saved successfully! Profit: N{prof:,.2f}")
 
-# --- TAB 2: HISTORY, EDIT & DELETE ---
+# --- TAB 2: HISTORY, EDIT, DELETE & TOOL MANAGER ---
 with tabs[1]:
-    st.header("📜 Archive, Edit & Delete")
-    df_hist = pd.read_sql("SELECT * FROM sales ORDER BY purchase_date DESC", get_connection())
+    st.header("📜 Archive & Management")
     
-    if not df_hist.empty:
-        search = st.text_input("🔍 Search Archive (Name, Email, or Order #)")
-        if search:
-            df_hist = df_hist[df_hist.astype(str).apply(lambda x: x.str.contains(search, case=False)).any(axis=1)]
-        
-        st.dataframe(df_hist, use_container_width=True)
-        st.divider()
-        
-        c1, c2, c3 = st.columns([1, 1, 1])
-        with c1:
-            st.subheader("🛠️ Quick Update")
-            manage_id = st.number_input("Enter ID #", min_value=1)
-            new_status = st.selectbox("Status", ["Active", "Issue", "Refunded", "Settled"])
-            if st.button("Apply Status"):
-                with get_connection() as conn:
-                    conn.execute("UPDATE sales SET status=? WHERE id=?", (new_status, manage_id))
-                st.success(f"ID {manage_id} is now {new_status}")
-                st.rerun()
-            if st.button("Generate PDF Receipt"):
-                try:
-                    target = df_hist[df_hist['id'] == manage_id].iloc[0].to_dict()
-                    st.download_button("Download PDF", create_pdf(target), f"Receipt_{manage_id}.pdf")
-                except:
-                    st.error("Select a valid ID first.")
+    # Sub-tabs for better organization
+    sub1, sub2 = st.tabs(["Archive & Actions", "🛠️ Tool Manager (Add/Edit Tools)"])
+    
+    with sub1:
+        df_hist = pd.read_sql("SELECT * FROM sales ORDER BY purchase_date DESC", get_connection())
+        if not df_hist.empty:
+            search = st.text_input("🔍 Search Archive (Name, Email, or Order #)")
+            if search:
+                df_hist = df_hist[df_hist.astype(str).apply(lambda x: x.str.contains(search, case=False)).any(axis=1)]
+            
+            st.dataframe(df_hist, use_container_width=True)
+            st.divider()
+            
+            c1, c2, c3 = st.columns([1, 1, 1])
+            with c1:
+                st.subheader("🛠️ Quick Update")
+                manage_id = st.number_input("Enter ID #", min_value=1)
+                new_status = st.selectbox("Status", ["Active", "Issue", "Refunded", "Settled"])
+                if st.button("Apply Status"):
+                    with get_connection() as conn:
+                        conn.execute("UPDATE sales SET status=? WHERE id=?", (new_status, manage_id))
+                    st.rerun()
+                if st.button("Generate PDF Receipt"):
+                    try:
+                        target = df_hist[df_hist['id'] == manage_id].iloc[0].to_dict()
+                        st.download_button("Download PDF", create_pdf(target), f"Receipt_{manage_id}.pdf")
+                    except:
+                        st.error("Select a valid ID first.")
 
-        with c2:
-            st.subheader("📝 Full Edit")
-            if manage_id:
-                record = df_hist[df_hist['id'] == manage_id]
-                if not record.empty:
-                    with st.expander("Edit Record Details"):
-                        e_name = st.text_input("Edit Name", value=record.iloc[0]['customer_name'])
-                        e_login = st.text_input("Edit Login", value=record.iloc[0]['login_email'])
-                        e_pass = st.text_input("Edit Pass", value=record.iloc[0]['login_password'])
-                        if st.button("Save Edit"):
-                            with get_connection() as conn:
-                                conn.execute("UPDATE sales SET customer_name=?, login_email=?, login_password=? WHERE id=?", 
-                                             (e_name, e_login, e_pass, manage_id))
-                            st.success("Changes Saved!")
-                            st.rerun()
+            with c2:
+                st.subheader("📝 Full Edit")
+                if manage_id:
+                    record = df_hist[df_hist['id'] == manage_id]
+                    if not record.empty:
+                        with st.expander("Edit Record Details"):
+                            e_name = st.text_input("Edit Name", value=record.iloc[0]['customer_name'])
+                            e_login = st.text_input("Edit Login", value=record.iloc[0]['login_email'])
+                            e_pass = st.text_input("Edit Pass", value=record.iloc[0]['login_password'])
+                            if st.button("Save Edit"):
+                                with get_connection() as conn:
+                                    conn.execute("UPDATE sales SET customer_name=?, login_email=?, login_password=? WHERE id=?", 
+                                                 (e_name, e_login, e_pass, manage_id))
+                                st.success("Changes Saved!")
+                                st.rerun()
 
-        with c3:
-            st.subheader("🗑️ Danger Zone")
-            if st.button("DELETE PERMANENTLY"):
+            with c3:
+                st.subheader("🗑️ Danger Zone")
+                if st.button("DELETE PERMANENTLY"):
+                    with get_connection() as conn:
+                        conn.execute("DELETE FROM sales WHERE id=?", (manage_id,))
+                    st.error(f"ID {manage_id} deleted.")
+                    st.rerun()
+        else:
+            st.info("No records found.")
+
+    with sub2:
+        st.subheader("Add or Remove Tools from Store")
+        
+        # Display current tools
+        with get_connection() as conn:
+            current_tools = pd.read_sql("SELECT * FROM tool_list", conn)
+        st.table(current_tools)
+        
+        # Form to add new tool
+        with st.form("add_tool_form"):
+            new_tool = st.text_input("New Tool Name (e.g., Netflix Premium)")
+            if st.form_submit_button("➕ Add Tool to Store"):
+                if new_tool:
+                    with get_connection() as conn:
+                        conn.execute("INSERT OR IGNORE INTO tool_list (tool_name) VALUES (?)", (new_tool,))
+                    st.success(f"{new_tool} added!")
+                    st.rerun()
+        
+        # Option to remove a tool
+        tool_to_remove = st.selectbox("Select Tool to Remove", ["Select..."] + current_tools['tool_name'].tolist())
+        if st.button("🗑️ Remove Tool from Store"):
+            if tool_to_remove != "Select...":
                 with get_connection() as conn:
-                    conn.execute("DELETE FROM sales WHERE id=?", (manage_id,))
-                st.error(f"ID {manage_id} deleted forever.")
+                    conn.execute("DELETE FROM tool_list WHERE tool_name=?", (tool_to_remove,))
+                st.warning(f"{tool_to_remove} removed!")
                 st.rerun()
-    else:
-        st.info("No records found in database.")
 
 # --- TAB 3: EXPIRY TRACKER ---
 with tabs[2]:
@@ -142,23 +186,18 @@ with tabs[2]:
     if not df_exp.empty:
         df_exp['expiry_date'] = pd.to_datetime(df_exp['expiry_date']).dt.date
         today = datetime.now().date()
-        # Filter for accounts expiring in next 3 days
         upcoming = df_exp[df_exp['expiry_date'] <= (today + timedelta(days=3))]
-        
-        # FIXED: Removed the ternary operator causing technical text glitch
         if not upcoming.empty:
             st.table(upcoming)
         else:
             st.success("All accounts healthy!")
     else:
-        st.info("No data to track.")
+        st.info("No data.")
 
 # --- TAB 4: VENDOR TRACKER ---
 with tabs[3]:
     st.header("🚩 G2G Vendor Issues")
     df_vend = pd.read_sql("SELECT vendor_name, g2g_order_number, product_name, status, customer_name FROM sales WHERE status != 'Active'", get_connection())
-    
-    # FIXED: Proper if/else block for Vendor tab
     if not df_vend.empty:
         st.warning("Follow up on these issues:")
         st.table(df_vend)
@@ -173,8 +212,6 @@ with tabs[4]:
         st.metric("Total All-Time Profit", f"N{df_rep['profit'].sum():,.2f}")
         st.write("### Profit Trend")
         st.bar_chart(df_rep.groupby('purchase_date')['profit'].sum())
-    else:
-        st.warning("Insufficient data for reports.")
 
 # --- TAB 6: BACKUP & RESTORE ---
 with tabs[5]:
@@ -191,7 +228,7 @@ with tabs[5]:
                 new_data = pd.read_csv(restore_file)
                 with get_connection() as conn:
                     new_data.to_sql('sales', conn, if_exists='append', index=False)
-                st.success("Restore complete! Check your history.")
+                st.success("Restore complete!")
                 st.rerun()
             except Exception as e:
-                st.error(f"Error restoring: {e}")
+                st.error(f"Error: {e}")
