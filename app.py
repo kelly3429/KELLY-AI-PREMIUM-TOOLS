@@ -1,22 +1,23 @@
 import streamlit as st
-import pd as pd
+import pandas as pd
 import sqlite3
 from datetime import datetime, timedelta
 from fpdf import FPDF
 import io
 
 # ==========================================
-# 1. DATABASE SYSTEM (v17)
+# 1. DATABASE SYSTEM (v17.1)
 # ==========================================
 @st.cache_resource
 def get_connection():
+    # Standardizing the DB name
     conn = sqlite3.connect('kelly_ai_v17.db', check_same_thread=False)
     return conn
 
 def init_db():
     conn = get_connection()
     c = conn.cursor()
-    # Added login_password to the schema
+    # Ensure all necessary columns exist
     c.execute('''CREATE TABLE IF NOT EXISTS sales 
                  (id INTEGER PRIMARY KEY AUTOINCREMENT, 
                   customer_name TEXT, product_name TEXT, 
@@ -79,10 +80,8 @@ with tabs[0]:
             manual_date = st.date_input("Purchase Date", datetime.now())
         
         with col2:
-            # NEW INPUTS FOR ACCOUNT CREDENTIALS
             acc_email = st.text_input("Account Email/Login")
             acc_pass = st.text_input("Account Password")
-            
             usd = st.number_input("G2G Cost (USD)", min_value=0.0)
             rate = st.number_input("Rate (NGN/$)", value=1550.0)
             vendor = st.text_input("G2G Vendor Name")
@@ -94,7 +93,6 @@ with tabs[0]:
             profit = paid - (usd * rate)
             
             conn = get_connection()
-            # Updated INSERT to include password
             conn.execute('''INSERT INTO sales (customer_name, product_name, login_email, login_password, 
                             amount_paid_naira, g2g_cost_usd, exchange_rate, profit, 
                             purchase_date, expiry_date, g2g_order_number, status, vendor_name) 
@@ -102,7 +100,7 @@ with tabs[0]:
                          (cust, prod, acc_email, acc_pass, paid, usd, rate, profit, 
                           manual_date, e_date, order_no, initial_status, vendor))
             conn.commit()
-            st.success(f"Sale Recorded for {cust} on {manual_date}!")
+            st.success(f"Sale Recorded for {cust}!")
             st.rerun()
 
 # --- TAB 2: SEARCH & MANAGE ---
@@ -146,8 +144,8 @@ with tabs[2]:
     st.header("📈 Growth & Data Restore")
     df_in = pd.read_sql("SELECT * FROM sales", get_connection())
     
-    c_i1, c_i2 = st.columns(2)
     if not df_in.empty:
+        c_i1, c_i2 = st.columns(2)
         c_i1.metric("Total Purchases", len(df_in))
         c_i2.metric("Unique Customers", df_in['customer_name'].nunique())
     
