@@ -5,10 +5,10 @@ from datetime import datetime, timedelta
 from fpdf import FPDF
 
 # ==========================================
-# 1. DATABASE SYSTEM (v20)
+# 1. DATABASE SYSTEM (v21)
 # ==========================================
 def get_connection():
-    return sqlite3.connect('kelly_ai_v20.db', check_same_thread=False)
+    return sqlite3.connect('kelly_ai_v21.db', check_same_thread=False)
 
 def init_db():
     with get_connection() as conn:
@@ -35,9 +35,11 @@ def create_pdf(data):
     pdf.cell(190, 10, "KELLY AI PREMIUM TOOLS - RECEIPT", ln=True, align='C')
     pdf.ln(10)
     pdf.set_font("Arial", '', 12)
+    # Define fields to show the customer
     fields = ['customer_name', 'product_name', 'amount_paid_naira', 'purchase_date', 'expiry_date', 'g2g_order_number']
     for key in fields:
-        pdf.cell(50, 10, f"{key.replace('_', ' ').title()}:")
+        label = key.replace('_', ' ').title()
+        pdf.cell(50, 10, f"{label}:")
         pdf.cell(100, 10, f"{data[key]}", ln=True)
     return pdf.output(dest='S').encode('latin-1', 'replace')
 
@@ -59,7 +61,7 @@ with tabs[0]:
             prod = st.selectbox("Product", ["ChatGPT Plus", "CapCut Pro", "Canva Pro", "Claude Pro", "Grok"])
             paid = st.number_input("Amount Paid (NGN)", min_value=0.0)
             p_date = st.date_input("Purchase Date", datetime.now())
-            vendor = st.text_input("Vendor Name")
+            vendor_name = st.text_input("Vendor Name")
         with col2:
             acc_email = st.text_input("Account Email")
             acc_pass = st.text_input("Account Password")
@@ -74,8 +76,8 @@ with tabs[0]:
                 conn.execute('''INSERT INTO sales (customer_name, product_name, login_email, login_password, 
                                 amount_paid_naira, g2g_cost_usd, exchange_rate, profit, purchase_date, 
                                 expiry_date, g2g_order_number, status, vendor_name) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)''',
-                             (cust, prod, acc_email, acc_pass, paid, usd_cost, rate, prof, p_date, exp, order_no, "Active", vendor))
-            st.success(f"Saved! Profit: N{prof:,.2f}")
+                             (cust, prod, acc_email, acc_pass, paid, usd_cost, rate, prof, p_date, exp, order_no, "Active", vendor_name))
+            st.success(f"Saved successfully! Profit: N{prof:,.2f}")
 
 # --- TAB 2: HISTORY, EDIT & DELETE ---
 with tabs[1]:
@@ -98,25 +100,29 @@ with tabs[1]:
             if st.button("Apply Status"):
                 with get_connection() as conn:
                     conn.execute("UPDATE sales SET status=? WHERE id=?", (new_status, manage_id))
+                st.success(f"ID {manage_id} is now {new_status}")
                 st.rerun()
             if st.button("Generate PDF Receipt"):
-                target = df_hist[df_hist['id'] == manage_id].iloc[0].to_dict()
-                st.download_button("Download PDF", create_pdf(target), f"Receipt_{manage_id}.pdf")
+                try:
+                    target = df_hist[df_hist['id'] == manage_id].iloc[0].to_dict()
+                    st.download_button("Download PDF", create_pdf(target), f"Receipt_{manage_id}.pdf")
+                except:
+                    st.error("Select a valid ID first.")
 
         with c2:
             st.subheader("📝 Full Edit")
             if manage_id:
                 record = df_hist[df_hist['id'] == manage_id]
                 if not record.empty:
-                    with st.expander("Click to Edit Details"):
-                        new_name = st.text_input("Name", value=record.iloc[0]['customer_name'])
-                        new_login = st.text_input("Login", value=record.iloc[0]['login_email'])
-                        new_pass = st.text_input("Pass", value=record.iloc[0]['login_password'])
-                        if st.button("Save Changes"):
+                    with st.expander("Edit Record Details"):
+                        e_name = st.text_input("Edit Name", value=record.iloc[0]['customer_name'])
+                        e_login = st.text_input("Edit Login", value=record.iloc[0]['login_email'])
+                        e_pass = st.text_input("Edit Pass", value=record.iloc[0]['login_password'])
+                        if st.button("Save Edit"):
                             with get_connection() as conn:
                                 conn.execute("UPDATE sales SET customer_name=?, login_email=?, login_password=? WHERE id=?", 
-                                             (new_name, new_login, new_pass, manage_id))
-                            st.success("Record Updated!")
+                                             (e_name, e_login, e_pass, manage_id))
+                            st.success("Changes Saved!")
                             st.rerun()
 
         with c3:
@@ -124,10 +130,10 @@ with tabs[1]:
             if st.button("DELETE PERMANENTLY"):
                 with get_connection() as conn:
                     conn.execute("DELETE FROM sales WHERE id=?", (manage_id,))
-                st.error(f"ID {manage_id} Deleted.")
+                st.error(f"ID {manage_id} deleted forever.")
                 st.rerun()
     else:
-        st.info("No records found.")
+        st.info("No records found in database.")
 
 # --- TAB 3: EXPIRY TRACKER ---
 with tabs[2]:
@@ -136,26 +142,39 @@ with tabs[2]:
     if not df_exp.empty:
         df_exp['expiry_date'] = pd.to_datetime(df_exp['expiry_date']).dt.date
         today = datetime.now().date()
+        # Filter for accounts expiring in next 3 days
         upcoming = df_exp[df_exp['expiry_date'] <= (today + timedelta(days=3))]
-                if not upcoming.empty:
+        
+        # FIXED: Removed the ternary operator causing technical text glitch
+        if not upcoming.empty:
             st.table(upcoming)
         else:
             st.success("All accounts healthy!")
-
+    else:
+        st.info("No data to track.")
 
 # --- TAB 4: VENDOR TRACKER ---
 with tabs[3]:
     st.header("🚩 G2G Vendor Issues")
     df_vend = pd.read_sql("SELECT vendor_name, g2g_order_number, product_name, status, customer_name FROM sales WHERE status != 'Active'", get_connection())
-    st.table(df_vend) if not df_vend.empty else st.success("No vendor issues!")
+    
+    # FIXED: Proper if/else block for Vendor tab
+    if not df_vend.empty:
+        st.warning("Follow up on these issues:")
+        st.table(df_vend)
+    else:
+        st.success("No vendor issues reported!")
 
 # --- TAB 5: REPORTS ---
 with tabs[4]:
     st.header("📊 Profit Analytics")
     df_rep = pd.read_sql("SELECT profit, purchase_date FROM sales", get_connection())
     if not df_rep.empty:
-        st.metric("Total Overall Profit", f"N{df_rep['profit'].sum():,.2f}")
+        st.metric("Total All-Time Profit", f"N{df_rep['profit'].sum():,.2f}")
+        st.write("### Profit Trend")
         st.bar_chart(df_rep.groupby('purchase_date')['profit'].sum())
+    else:
+        st.warning("Insufficient data for reports.")
 
 # --- TAB 6: BACKUP & RESTORE ---
 with tabs[5]:
@@ -164,11 +183,15 @@ with tabs[5]:
     st.download_button("📥 Download Backup (CSV)", full_df.to_csv(index=False).encode('utf-8'), "kelly_ai_backup.csv")
     
     st.divider()
-    st.subheader("📤 Restore History")
-    restore_file = st.file_uploader("Upload CSV", type="csv")
-    if restore_file is not None and st.button("Merge Data"):
-        new_data = pd.read_csv(restore_file)
-        with get_connection() as conn:
-            new_data.to_sql('sales', conn, if_exists='append', index=False)
-        st.success("Restored!")
-        st.rerun()
+    st.subheader("📤 Restore/Re-upload Data")
+    restore_file = st.file_uploader("Upload CSV Backup", type="csv")
+    if restore_file is not None:
+        if st.button("Run Restore"):
+            try:
+                new_data = pd.read_csv(restore_file)
+                with get_connection() as conn:
+                    new_data.to_sql('sales', conn, if_exists='append', index=False)
+                st.success("Restore complete! Check your history.")
+                st.rerun()
+            except Exception as e:
+                st.error(f"Error restoring: {e}")
