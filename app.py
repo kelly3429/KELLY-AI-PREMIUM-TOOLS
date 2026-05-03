@@ -14,13 +14,12 @@ COMPANY_NAME = "Kelly AI Premium Tools"
 ADMIN_PASSWORD = "Kelly500#"
 MY_WHATSAPP = "2347060911547"
 
-# EMAIL CONFIG - Get your 16-character App Password from Google
+# EMAIL CONFIG - Replace with your 16-character App Password
 EMAIL_ADDRESS = "your_email@gmail.com" 
 EMAIL_PASSWORD = "xxxx xxxx xxxx xxxx" 
 
 def get_connection():
-    # Standardizing on ONE database name to stop losing users
-    return sqlite3.connect('kelly_ai_final_master.db', check_same_thread=False)
+    return sqlite3.connect('kelly_ai_final_v2.db', check_same_thread=False)
 
 def init_db():
     with get_connection() as conn:
@@ -38,7 +37,7 @@ def init_db():
 init_db()
 
 # ==========================================
-# 2. EMAIL ENGINE
+# 2. CORE UTILITIES
 # ==========================================
 def send_automated_email(to_email, subject, body):
     msg = EmailMessage()
@@ -52,7 +51,7 @@ def send_automated_email(to_email, subject, body):
             smtp.send_message(msg)
         return True
     except Exception as e:
-        st.sidebar.error(f"Mail Error: {e}")
+        st.error(f"Mail Error: {e}")
         return False
 
 # ==========================================
@@ -60,133 +59,151 @@ def send_automated_email(to_email, subject, body):
 # ==========================================
 st.set_page_config(page_title=COMPANY_NAME, layout="wide")
 
-# Initializing Session States
 if 'auth' not in st.session_state:
     st.session_state.update({'auth': False, 'admin': False, 'email': "", 'name': "", 'otp': None, 'otp_email': ""})
 
-# --- SIDEBAR WELCOME NOTE ---
+# SIDEBAR
 if st.session_state['auth']:
     st.sidebar.title(f"👋 Welcome, {st.session_state.get('name', 'User')}")
-    st.sidebar.write(f"Logged in as: **{st.session_state['email']}**")
-    st.sidebar.info("Glad to have you back at Kelly AI Premium Tools!")
-    st.sidebar.write("---")
+    st.sidebar.write(f"Account: **{st.session_state['email']}**")
+    st.sidebar.info(f"Glad to have you back at {COMPANY_NAME}!")
     if st.sidebar.button("Logout"):
-        st.session_state.update({'auth': False, 'admin': False, 'email': "", 'name': "", 'otp': None})
+        st.session_state.update({'auth': False, 'admin': False})
         st.rerun()
 
-# --- LOGIN / SIGNUP SCREEN ---
+# LOGIN SCREEN
 if not st.session_state['auth']:
     st.title(f"💎 {COMPANY_NAME}")
-    t = st.tabs(["Login", "Register", "Forgot Password (OTP)", "Admin"])
+    t = st.tabs(["Login", "Register", "Forgot Password", "Admin"])
     
     with t[0]:
-        e_in = st.text_input("Email", key="l_e").lower().strip()
-        p_in = st.text_input("Password", type="password", key="l_p")
+        e_in = st.text_input("Email", key="login_e").lower().strip()
+        p_in = st.text_input("Password", type="password", key="login_p")
         if st.button("Access Portal"):
             with get_connection() as conn:
                 u = conn.execute("SELECT * FROM users WHERE email=? AND password=?", (e_in, p_in)).fetchone()
-                if u: 
-                    if u[3] == 'Banned': st.error("🚫 Your account is banned.")
+                if u:
+                    if u[3] == 'Banned': st.error("🚫 Account Banned.")
                     else:
                         st.session_state.update({'auth':True, 'email':e_in, 'name':u[2], 'admin':False})
                         st.rerun()
-                else: st.error("Invalid Login. Please Register if you haven't.")
+                else: st.error("Invalid Login. Please ensure you have registered.")
 
     with t[1]:
-        n_reg = st.text_input("Full Name", key="s_n")
-        em_reg = st.text_input("Email", key="s_e").lower().strip()
-        pw_reg = st.text_input("Password", type="password", key="s_p")
+        n_reg = st.text_input("Full Name")
+        em_reg = st.text_input("Email Address").lower().strip()
+        pw_reg = st.text_input("Create Password", type="password")
         if st.button("Create Profile"):
-            if not n_reg or not em_reg or not pw_reg:
-                st.warning("Please fill all fields.")
-            else:
-                try:
-                    with get_connection() as conn:
-                        conn.execute("INSERT INTO users (email, password, name) VALUES (?,?,?)", (em_reg, pw_reg, n_reg))
-                        conn.commit()
-                    st.success("Profile Created! You can now switch to the Login tab.")
-                except: st.error("Email already taken.")
+            try:
+                with get_connection() as conn:
+                    conn.execute("INSERT INTO users (email, password, name) VALUES (?,?,?)", (em_reg, pw_reg, n_reg))
+                    conn.commit()
+                st.success("Registration Successful! Now go to the Login tab.")
+            except: st.error("Email taken.")
 
     with t[2]:
-        re_e = st.text_input("Enter Registered Email", key="recovery_email").lower().strip()
-        if st.button("Send OTP Code"):
+        re_e = st.text_input("Registered Email").lower().strip()
+        if st.button("Send OTP"):
             with get_connection() as conn:
                 u = conn.execute("SELECT * FROM users WHERE email=?", (re_e,)).fetchone()
                 if u:
-                    otp_val = str(random.randint(1000, 9999))
-                    st.session_state.update({'otp': otp_val, 'otp_email': re_e})
-                    if send_automated_email(re_e, "Security Code", f"Your recovery code is: {otp_val}"):
-                        st.success("OTP sent! Check your inbox.")
-                else: st.error("Email not found.")
+                    otp = str(random.randint(1000, 9999))
+                    st.session_state.update({'otp': otp, 'otp_email': re_e})
+                    send_automated_email(re_e, "Your OTP Code", f"Code: {otp}")
+                    st.success("Check your email!")
         
-        input_otp = st.text_input("Enter 4-Digit Code", key="otp_in")
-        new_pw = st.text_input("New Password", type="password", key="otp_new_pw")
-        if st.button("Verify & Reset"):
-            if st.session_state['otp'] and input_otp == st.session_state['otp']:
+        in_otp = st.text_input("OTP Code")
+        new_pw = st.text_input("New Password", type="password")
+        if st.button("Reset"):
+            if in_otp == st.session_state.get('otp'):
                 with get_connection() as conn:
                     conn.execute("UPDATE users SET password=? WHERE email=?", (new_pw, re_e))
                     conn.commit()
-                st.success("Password Updated! Go to Login.")
-            else: st.error("Invalid Code.")
+                st.success("Updated!")
 
     with t[3]:
         ak = st.text_input("Admin Key", type="password")
-        if st.button("Unlock Admin Dashboard"):
-            if ak == ADMIN_PASSWORD: 
-                st.session_state.update({'auth':True, 'admin':True, 'email': 'Admin', 'name': 'Boss'})
+        if st.button("Unlock Admin"):
+            if ak == ADMIN_PASSWORD:
+                st.session_state.update({'auth':True, 'admin':True, 'name':'Admin', 'email':'Admin'})
                 st.rerun()
 
-# --- LOGGED IN CONTENT ---
 else:
     if st.session_state['admin']:
-        adm = st.tabs(["📦 Delivery", "🛠️ Tool Manager", "👥 Users", "📋 Inventory"])
+        adm = st.tabs(["📦 Delivery", "🛠️ Tool Manager", "👥 Users", "📋 Inventory", "📊 Revenue", "💾 Backup"])
+        
         with adm[0]:
-            st.header("New Order Delivery")
-            # Pull dynamic tools
+            st.header("Deliver Order")
             with get_connection() as conn:
                 tools = [r[0] for r in conn.execute("SELECT name FROM products").fetchall()]
-            
-            with st.form("d_form"):
+            with st.form("deliv"):
                 c_mail = st.text_input("Customer Email")
                 tool = st.selectbox("Tool", tools if tools else ["Add tools in Manager first"])
-                p_mail = st.text_input("Premium Login")
-                p_pass = st.text_input("Premium Password")
-                price = st.number_input("Sold Price (NGN)")
+                p_l = st.text_input("Premium Login")
+                p_p = st.text_input("Premium Pass")
+                price = st.number_input("Sold Price")
                 cost = st.number_input("Cost (USD)")
                 rate = st.number_input("Rate", value=1550.0)
-                vendor = st.text_input("Vendor")
-                order = st.text_input("Order ID")
+                vend = st.text_input("Vendor")
+                oid = st.text_input("Order ID")
                 if st.form_submit_button("Deliver"):
                     prof = price - (cost * rate)
                     exp = (datetime.now() + timedelta(days=30)).date()
                     with get_connection() as conn:
                         conn.execute("INSERT INTO sales (cust_email, product, p_login, p_pass, profit, p_date, e_date, order_id, vendor, status, price_paid) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
-                                     (c_mail, tool, p_mail, p_pass, prof, datetime.now().date(), exp, order, vendor, "Active", price))
+                                     (c_mail, tool, p_l, p_p, prof, datetime.now().date(), exp, oid, vend, "Active", price))
                         conn.commit()
-                    send_automated_email(c_mail, "Account Ready", f"Login: {p_mail}\nPass: {p_pass}\nExpires: {exp}")
+                    send_automated_email(c_mail, "Tool Ready", f"Login: {p_l}\nPass: {p_p}")
                     st.success("Delivered!")
-        # (Other Admin tabs remain same...)
-    else:
-        # --- CUSTOMER PORTAL ---
-        c_tabs = st.tabs(["🔓 My Accounts", "🛒 Marketplace", "💬 Support"])
-        with c_tabs[0]:
+
+        with adm[1]:
+            st.header("Manage Tools")
+            with st.form("tools"):
+                tn = st.text_input("Tool Name")
+                tp = st.number_input("Price")
+                td = st.text_area("Desc")
+                if st.form_submit_button("Save Tool"):
+                    with get_connection() as conn:
+                        conn.execute("INSERT OR REPLACE INTO products VALUES (?,?,?)", (tn, tp, td))
+                        conn.commit()
+                    st.success("Tool Added!")
+
+        with adm[2]:
+            st.header("Users")
             with get_connection() as conn:
-                my_tools = pd.read_sql(f"SELECT * FROM sales WHERE cust_email='{st.session_state['email']}'", conn)
-            if not my_tools.empty:
-                for _, r in my_tools.iterrows():
-                    with st.expander(f"⭐ {r['product']} (Exp: {r['e_date']})"):
-                        st.code(f"Email: {r['p_login']}\nPass: {r['p_pass']}")
-            else: st.info("No active accounts. Go to Marketplace!")
-            
-        with c_tabs[1]:
+                u_df = pd.read_sql("SELECT name, email, status FROM users", conn)
+            st.table(u_df)
+            target = st.text_input("User Email")
+            if st.button("Ban/Unban"):
+                with get_connection() as conn:
+                    curr = conn.execute("SELECT status FROM users WHERE email=?", (target,)).fetchone()
+                    if curr:
+                        ns = 'Banned' if curr[0] == 'Active' else 'Active'
+                        conn.execute("UPDATE users SET status=? WHERE email=?", (ns, target))
+                        conn.commit()
+                        st.rerun()
+
+        with adm[3]:
+            st.header("Inventory")
+            with get_connection() as conn:
+                df = pd.read_sql("SELECT * FROM sales", conn)
+            st.dataframe(df)
+
+        with adm[4]:
+            st.header("Revenue")
+            with get_connection() as conn:
+                df = pd.read_sql("SELECT profit, p_date FROM sales", conn)
+            if not df.empty:
+                st.metric("Total Profit", f"N{df['profit'].sum():,.2f}")
+                st.bar_chart(df.set_index('p_date'))
+
+    else:
+        # CUSTOMER
+        ct = st.tabs(["🔓 My Tools", "🛒 Store", "💬 Support"])
+        with ct[1]:
             with get_connection() as conn:
                 p_df = pd.read_sql("SELECT * FROM products", conn)
             for _, r in p_df.iterrows():
-                st.write(f"### {r['name']} — N{r['price']:,.0f}")
-                txt = urllib.parse.quote(f"Buy {r['name']} for N{r['price']}. Email: {st.session_state['email']}")
-                st.link_button("Buy via WhatsApp", f"https://wa.me/{MY_WHATSAPP}?text={txt}")
-                st.divider()
-                
-        with c_tabs[2]:
-            st.header("Support")
-            st.link_button("WhatsApp Support", f"https://wa.me/{MY_WHATSAPP}")
+                st.write(f"### {r['name']} - N{r['price']:,.0f}")
+                msg = urllib.parse.quote(f"I want to buy {r['name']}. Email: {st.session_state['email']}")
+                st.link_button("Buy Now", f"https://wa.me/{MY_WHATSAPP}?text={msg}")
