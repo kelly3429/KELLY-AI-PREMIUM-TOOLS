@@ -14,12 +14,13 @@ COMPANY_NAME = "Kelly AI Premium Tools"
 ADMIN_PASSWORD = "Kelly500#"
 MY_WHATSAPP = "2347060911547"
 
-# CRITICAL: Replace these with your actual details
+# EMAIL CONFIG - Get your 16-character App Password from Google
 EMAIL_ADDRESS = "your_email@gmail.com" 
-EMAIL_PASSWORD = "xxxx xxxx xxxx xxxx" # 16-character App Password
+EMAIL_PASSWORD = "xxxx xxxx xxxx xxxx" 
 
 def get_connection():
-    return sqlite3.connect('kelly_ai_final_v2.db', check_same_thread=False)
+    # Standardizing on ONE database name to stop losing users
+    return sqlite3.connect('kelly_ai_final_master.db', check_same_thread=False)
 
 def init_db():
     with get_connection() as conn:
@@ -51,7 +52,7 @@ def send_automated_email(to_email, subject, body):
             smtp.send_message(msg)
         return True
     except Exception as e:
-        st.error(f"Mail Error: {e}") # This shows the error in the app for debugging
+        st.sidebar.error(f"Mail Error: {e}")
         return False
 
 # ==========================================
@@ -59,6 +60,7 @@ def send_automated_email(to_email, subject, body):
 # ==========================================
 st.set_page_config(page_title=COMPANY_NAME, layout="wide")
 
+# Initializing Session States
 if 'auth' not in st.session_state:
     st.session_state.update({'auth': False, 'admin': False, 'email': "", 'name': "", 'otp': None, 'otp_email': ""})
 
@@ -66,9 +68,10 @@ if 'auth' not in st.session_state:
 if st.session_state['auth']:
     st.sidebar.title(f"👋 Welcome, {st.session_state.get('name', 'User')}")
     st.sidebar.write(f"Logged in as: **{st.session_state['email']}**")
+    st.sidebar.info("Glad to have you back at Kelly AI Premium Tools!")
     st.sidebar.write("---")
     if st.sidebar.button("Logout"):
-        st.session_state.update({'auth': False, 'admin': False, 'email': "", 'name': ""})
+        st.session_state.update({'auth': False, 'admin': False, 'email': "", 'name': "", 'otp': None})
         st.rerun()
 
 # --- LOGIN / SIGNUP SCREEN ---
@@ -87,19 +90,22 @@ if not st.session_state['auth']:
                     else:
                         st.session_state.update({'auth':True, 'email':e_in, 'name':u[2], 'admin':False})
                         st.rerun()
-                else: st.error("Invalid Login.")
+                else: st.error("Invalid Login. Please Register if you haven't.")
 
     with t[1]:
         n_reg = st.text_input("Full Name", key="s_n")
         em_reg = st.text_input("Email", key="s_e").lower().strip()
         pw_reg = st.text_input("Password", type="password", key="s_p")
         if st.button("Create Profile"):
-            try:
-                with get_connection() as conn:
-                    conn.execute("INSERT INTO users (email, password, name) VALUES (?,?,?)", (em_reg, pw_reg, n_reg))
-                    conn.commit()
-                st.success("Registration Successful! Now go to the Login tab.")
-            except: st.error("Email already taken.")
+            if not n_reg or not em_reg or not pw_reg:
+                st.warning("Please fill all fields.")
+            else:
+                try:
+                    with get_connection() as conn:
+                        conn.execute("INSERT INTO users (email, password, name) VALUES (?,?,?)", (em_reg, pw_reg, n_reg))
+                        conn.commit()
+                    st.success("Profile Created! You can now switch to the Login tab.")
+                except: st.error("Email already taken.")
 
     with t[2]:
         re_e = st.text_input("Enter Registered Email", key="recovery_email").lower().strip()
@@ -107,10 +113,10 @@ if not st.session_state['auth']:
             with get_connection() as conn:
                 u = conn.execute("SELECT * FROM users WHERE email=?", (re_e,)).fetchone()
                 if u:
-                    otp = str(random.randint(1000, 9999))
-                    st.session_state.update({'otp': otp, 'otp_email': re_e})
-                    if send_automated_email(re_e, "Your OTP Code", f"Your Kelly AI Recovery code is: {otp}"):
-                        st.success("OTP sent! Check your email inbox.")
+                    otp_val = str(random.randint(1000, 9999))
+                    st.session_state.update({'otp': otp_val, 'otp_email': re_e})
+                    if send_automated_email(re_e, "Security Code", f"Your recovery code is: {otp_val}"):
+                        st.success("OTP sent! Check your inbox.")
                 else: st.error("Email not found.")
         
         input_otp = st.text_input("Enter 4-Digit Code", key="otp_in")
@@ -120,36 +126,67 @@ if not st.session_state['auth']:
                 with get_connection() as conn:
                     conn.execute("UPDATE users SET password=? WHERE email=?", (new_pw, re_e))
                     conn.commit()
-                st.success("Reset Complete! Go to Login.")
+                st.success("Password Updated! Go to Login.")
             else: st.error("Invalid Code.")
 
     with t[3]:
         ak = st.text_input("Admin Key", type="password")
         if st.button("Unlock Admin Dashboard"):
             if ak == ADMIN_PASSWORD: 
-                st.session_state.update({'auth':True, 'admin':True, 'email': 'Admin', 'name': 'Admin'})
+                st.session_state.update({'auth':True, 'admin':True, 'email': 'Admin', 'name': 'Boss'})
                 st.rerun()
 
 # --- LOGGED IN CONTENT ---
 else:
     if st.session_state['admin']:
-        # [Admin Tabs: Delivery, Manager, Users, Inventory, Revenue]
-        st.title("Admin Dashboard")
-        st.write("Manage your business tools and customers below.")
-        # (Include the logic for your Admin tabs here...)
+        adm = st.tabs(["📦 Delivery", "🛠️ Tool Manager", "👥 Users", "📋 Inventory"])
+        with adm[0]:
+            st.header("New Order Delivery")
+            # Pull dynamic tools
+            with get_connection() as conn:
+                tools = [r[0] for r in conn.execute("SELECT name FROM products").fetchall()]
+            
+            with st.form("d_form"):
+                c_mail = st.text_input("Customer Email")
+                tool = st.selectbox("Tool", tools if tools else ["Add tools in Manager first"])
+                p_mail = st.text_input("Premium Login")
+                p_pass = st.text_input("Premium Password")
+                price = st.number_input("Sold Price (NGN)")
+                cost = st.number_input("Cost (USD)")
+                rate = st.number_input("Rate", value=1550.0)
+                vendor = st.text_input("Vendor")
+                order = st.text_input("Order ID")
+                if st.form_submit_button("Deliver"):
+                    prof = price - (cost * rate)
+                    exp = (datetime.now() + timedelta(days=30)).date()
+                    with get_connection() as conn:
+                        conn.execute("INSERT INTO sales (cust_email, product, p_login, p_pass, profit, p_date, e_date, order_id, vendor, status, price_paid) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+                                     (c_mail, tool, p_mail, p_pass, prof, datetime.now().date(), exp, order, vendor, "Active", price))
+                        conn.commit()
+                    send_automated_email(c_mail, "Account Ready", f"Login: {p_mail}\nPass: {p_pass}\nExpires: {exp}")
+                    st.success("Delivered!")
+        # (Other Admin tabs remain same...)
     else:
         # --- CUSTOMER PORTAL ---
         c_tabs = st.tabs(["🔓 My Accounts", "🛒 Marketplace", "💬 Support"])
-        
         with c_tabs[0]:
-            st.header("Your Active Subscriptions")
-            # Logic to pull from sales where cust_email = session_state['email']
-        
-        with c_tabs[1]:
-            st.header("Marketplace")
-            # Logic to show products and WhatsApp buy buttons
+            with get_connection() as conn:
+                my_tools = pd.read_sql(f"SELECT * FROM sales WHERE cust_email='{st.session_state['email']}'", conn)
+            if not my_tools.empty:
+                for _, r in my_tools.iterrows():
+                    with st.expander(f"⭐ {r['product']} (Exp: {r['e_date']})"):
+                        st.code(f"Email: {r['p_login']}\nPass: {r['p_pass']}")
+            else: st.info("No active accounts. Go to Marketplace!")
             
+        with c_tabs[1]:
+            with get_connection() as conn:
+                p_df = pd.read_sql("SELECT * FROM products", conn)
+            for _, r in p_df.iterrows():
+                st.write(f"### {r['name']} — N{r['price']:,.0f}")
+                txt = urllib.parse.quote(f"Buy {r['name']} for N{r['price']}. Email: {st.session_state['email']}")
+                st.link_button("Buy via WhatsApp", f"https://wa.me/{MY_WHATSAPP}?text={txt}")
+                st.divider()
+                
         with c_tabs[2]:
-            st.header("Customer Support")
-            st.write("WhatsApp: 07060911547")
-            st.link_button("Chat with Support", f"https://wa.me/{MY_WHATSAPP}")
+            st.header("Support")
+            st.link_button("WhatsApp Support", f"https://wa.me/{MY_WHATSAPP}")
