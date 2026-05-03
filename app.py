@@ -5,10 +5,10 @@ from datetime import datetime, timedelta
 from fpdf import FPDF
 
 # ==========================================
-# 1. DATABASE SYSTEM (v22)
+# 1. DATABASE SYSTEM (v23)
 # ==========================================
 def get_connection():
-    return sqlite3.connect('kelly_ai_v22.db', check_same_thread=False)
+    return sqlite3.connect('kelly_ai_v23.db', check_same_thread=False)
 
 def init_db():
     with get_connection() as conn:
@@ -36,7 +36,7 @@ def init_db():
 init_db()
 
 # ==========================================
-# 2. PDF RECEIPT ENGINE
+# 2. PDF RECEIPT ENGINE (Updated Label)
 # ==========================================
 def create_pdf(data):
     pdf = FPDF()
@@ -45,18 +45,30 @@ def create_pdf(data):
     pdf.cell(190, 10, "KELLY AI PREMIUM TOOLS - RECEIPT", ln=True, align='C')
     pdf.ln(10)
     pdf.set_font("Arial", '', 12)
-    fields = ['customer_name', 'product_name', 'amount_paid_naira', 'purchase_date', 'expiry_date', 'g2g_order_number']
-    for key in fields:
-        label = key.replace('_', ' ').title()
-        pdf.cell(50, 10, f"{label}:")
-        pdf.cell(100, 10, f"{data[key]}", ln=True)
+    
+    # Mapping table for display labels
+    display_fields = [
+        ("Customer Name", data['customer_name']),
+        ("Product Name", data['product_name']),
+        ("Amount Paid (NGN)", f"N{data['amount_paid_naira']:,.2f}"),
+        ("Purchase Date", data['purchase_date']),
+        ("Expiry Date", data['expiry_date']),
+        ("Kelly Ai Store Order No.", data['g2g_order_number']) # Updated label
+    ]
+    
+    for label, value in display_fields:
+        pdf.set_font("Arial", 'B', 11)
+        pdf.cell(60, 10, f"{label}:")
+        pdf.set_font("Arial", '', 11)
+        pdf.cell(130, 10, f"{value}", ln=True)
+        
     return pdf.output(dest='S').encode('latin-1', 'replace')
 
 # ==========================================
 # 3. UI SETUP
 # ==========================================
 st.set_page_config(page_title="Kelly AI Ultimate", layout="wide")
-st.title("💎 Kelly AI Ultimate: Business Manager")
+st.title("💰 Kelly AI Management Suite")
 
 tabs = st.tabs(["➕ New Sale", "📜 History & Manager", "⏰ Expiry Tracker", "🚩 Vendor Tracker", "📊 Reports", "💾 Backup & Restore"])
 
@@ -64,7 +76,6 @@ tabs = st.tabs(["➕ New Sale", "📜 History & Manager", "⏰ Expiry Tracker", 
 with tabs[0]:
     st.header("Record Transaction")
     
-    # Get Dynamic Tools from Database
     with get_connection() as conn:
         tools_db = [r[0] for r in conn.execute("SELECT tool_name FROM tool_list").fetchall()]
 
@@ -81,7 +92,7 @@ with tabs[0]:
             acc_pass = st.text_input("Account Password")
             usd_cost = st.number_input("G2G Cost (USD)", min_value=0.0)
             rate = st.number_input("Exchange Rate", value=1550.0)
-            order_no = st.text_input("G2G Order #")
+            order_no = st.text_input("Kelly Ai Store Order No.")
 
         if st.form_submit_button("Save Sale"):
             prof = paid - (usd_cost * rate)
@@ -95,15 +106,12 @@ with tabs[0]:
 
 # --- TAB 2: HISTORY, EDIT, DELETE & TOOL MANAGER ---
 with tabs[1]:
-    st.header("📜 Archive & Management")
-    
-    # Sub-tabs for better organization
-    sub1, sub2 = st.tabs(["Archive & Actions", "🛠️ Tool Manager (Add/Edit Tools)"])
+    sub1, sub2 = st.tabs(["Archive & Actions", "🛠️ Tool Manager"])
     
     with sub1:
         df_hist = pd.read_sql("SELECT * FROM sales ORDER BY purchase_date DESC", get_connection())
         if not df_hist.empty:
-            search = st.text_input("🔍 Search Archive (Name, Email, or Order #)")
+            search = st.text_input("🔍 Search Archive")
             if search:
                 df_hist = df_hist[df_hist.astype(str).apply(lambda x: x.str.contains(search, case=False)).any(axis=1)]
             
@@ -112,7 +120,7 @@ with tabs[1]:
             
             c1, c2, c3 = st.columns([1, 1, 1])
             with c1:
-                st.subheader("🛠️ Quick Update")
+                st.subheader("🛠️ Status Update")
                 manage_id = st.number_input("Enter ID #", min_value=1)
                 new_status = st.selectbox("Status", ["Active", "Issue", "Refunded", "Settled"])
                 if st.button("Apply Status"):
@@ -153,30 +161,24 @@ with tabs[1]:
             st.info("No records found.")
 
     with sub2:
-        st.subheader("Add or Remove Tools from Store")
-        
-        # Display current tools
+        st.subheader("Store Product List")
         with get_connection() as conn:
             current_tools = pd.read_sql("SELECT * FROM tool_list", conn)
         st.table(current_tools)
         
-        # Form to add new tool
         with st.form("add_tool_form"):
-            new_tool = st.text_input("New Tool Name (e.g., Netflix Premium)")
-            if st.form_submit_button("➕ Add Tool to Store"):
+            new_tool = st.text_input("New Tool Name")
+            if st.form_submit_button("➕ Add Tool"):
                 if new_tool:
                     with get_connection() as conn:
                         conn.execute("INSERT OR IGNORE INTO tool_list (tool_name) VALUES (?)", (new_tool,))
-                    st.success(f"{new_tool} added!")
                     st.rerun()
         
-        # Option to remove a tool
-        tool_to_remove = st.selectbox("Select Tool to Remove", ["Select..."] + current_tools['tool_name'].tolist())
-        if st.button("🗑️ Remove Tool from Store"):
+        tool_to_remove = st.selectbox("Remove Tool", ["Select..."] + current_tools['tool_name'].tolist())
+        if st.button("🗑️ Remove Tool"):
             if tool_to_remove != "Select...":
                 with get_connection() as conn:
                     conn.execute("DELETE FROM tool_list WHERE tool_name=?", (tool_to_remove,))
-                st.warning(f"{tool_to_remove} removed!")
                 st.rerun()
 
 # --- TAB 3: EXPIRY TRACKER ---
@@ -191,8 +193,6 @@ with tabs[2]:
             st.table(upcoming)
         else:
             st.success("All accounts healthy!")
-    else:
-        st.info("No data.")
 
 # --- TAB 4: VENDOR TRACKER ---
 with tabs[3]:
@@ -209,8 +209,7 @@ with tabs[4]:
     st.header("📊 Profit Analytics")
     df_rep = pd.read_sql("SELECT profit, purchase_date FROM sales", get_connection())
     if not df_rep.empty:
-        st.metric("Total All-Time Profit", f"N{df_rep['profit'].sum():,.2f}")
-        st.write("### Profit Trend")
+        st.metric("Total Profit", f"N{df_rep['profit'].sum():,.2f}")
         st.bar_chart(df_rep.groupby('purchase_date')['profit'].sum())
 
 # --- TAB 6: BACKUP & RESTORE ---
@@ -220,15 +219,13 @@ with tabs[5]:
     st.download_button("📥 Download Backup (CSV)", full_df.to_csv(index=False).encode('utf-8'), "kelly_ai_backup.csv")
     
     st.divider()
-    st.subheader("📤 Restore/Re-upload Data")
     restore_file = st.file_uploader("Upload CSV Backup", type="csv")
-    if restore_file is not None:
-        if st.button("Run Restore"):
-            try:
-                new_data = pd.read_csv(restore_file)
-                with get_connection() as conn:
-                    new_data.to_sql('sales', conn, if_exists='append', index=False)
-                st.success("Restore complete!")
-                st.rerun()
-            except Exception as e:
-                st.error(f"Error: {e}")
+    if restore_file is not None and st.button("Run Restore"):
+        try:
+            new_data = pd.read_csv(restore_file)
+            with get_connection() as conn:
+                new_data.to_sql('sales', conn, if_exists='append', index=False)
+            st.success("Restore complete!")
+            st.rerun()
+        except Exception as e:
+            st.error(f"Error: {e}")
