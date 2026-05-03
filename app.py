@@ -5,10 +5,10 @@ from datetime import datetime, timedelta
 from fpdf import FPDF
 
 # ==========================================
-# 1. DATABASE SYSTEM (v23)
+# 1. DATABASE SYSTEM (v24)
 # ==========================================
 def get_connection():
-    return sqlite3.connect('kelly_ai_v23.db', check_same_thread=False)
+    return sqlite3.connect('kelly_ai_v24.db', check_same_thread=False)
 
 def init_db():
     with get_connection() as conn:
@@ -36,31 +36,55 @@ def init_db():
 init_db()
 
 # ==========================================
-# 2. PDF RECEIPT ENGINE (Updated Label)
+# 2. PDF RECEIPT ENGINE (Updated with Credentials & Thank You)
 # ==========================================
 def create_pdf(data):
     pdf = FPDF()
     pdf.add_page()
+    
+    # Header
     pdf.set_font("Arial", 'B', 16)
     pdf.cell(190, 10, "KELLY AI PREMIUM TOOLS - RECEIPT", ln=True, align='C')
     pdf.ln(10)
-    pdf.set_font("Arial", '', 12)
     
-    # Mapping table for display labels
+    # Transaction Details
+    pdf.set_font("Arial", 'B', 12)
+    pdf.cell(190, 10, "Transaction Details:", ln=True)
+    pdf.set_font("Arial", '', 11)
+    
     display_fields = [
         ("Customer Name", data['customer_name']),
         ("Product Name", data['product_name']),
         ("Amount Paid (NGN)", f"N{data['amount_paid_naira']:,.2f}"),
         ("Purchase Date", data['purchase_date']),
         ("Expiry Date", data['expiry_date']),
-        ("Kelly Ai Store Order No.", data['g2g_order_number']) # Updated label
+        ("Kelly Ai Store Order No.", data['g2g_order_number'])
     ]
     
     for label, value in display_fields:
-        pdf.set_font("Arial", 'B', 11)
-        pdf.cell(60, 10, f"{label}:")
-        pdf.set_font("Arial", '', 11)
-        pdf.cell(130, 10, f"{value}", ln=True)
+        pdf.set_font("Arial", 'B', 10)
+        pdf.cell(60, 8, f"{label}:")
+        pdf.set_font("Arial", '', 10)
+        pdf.cell(130, 8, f"{value}", ln=True)
+    
+    pdf.ln(5)
+    
+    # Account Credentials Section
+    pdf.set_font("Arial", 'B', 12)
+    pdf.set_fill_color(240, 240, 240)
+    pdf.cell(190, 10, "Account Credentials:", ln=True, fill=True)
+    pdf.set_font("Arial", '', 10)
+    pdf.cell(60, 8, "Login Email/Account:")
+    pdf.cell(130, 8, f"{data['login_email']}", ln=True)
+    pdf.cell(60, 8, "Password:")
+    pdf.cell(130, 8, f"{data['login_password']}", ln=True)
+    
+    pdf.ln(15)
+    
+    # Thank You Message
+    pdf.set_font("Arial", 'I', 12)
+    pdf.cell(190, 10, "Thank you for choosing Kelly Ai Premium Tools!", ln=True, align='C')
+    pdf.cell(190, 10, "We appreciate your business.", ln=True, align='C')
         
     return pdf.output(dest='S').encode('latin-1', 'replace')
 
