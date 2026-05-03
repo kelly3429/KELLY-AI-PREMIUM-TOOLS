@@ -137,7 +137,11 @@ with tabs[2]:
         df_exp['expiry_date'] = pd.to_datetime(df_exp['expiry_date']).dt.date
         today = datetime.now().date()
         upcoming = df_exp[df_exp['expiry_date'] <= (today + timedelta(days=3))]
-        st.table(upcoming) if not upcoming.empty else st.success("All accounts healthy!")
+                if not upcoming.empty:
+            st.table(upcoming)
+        else:
+            st.success("All accounts healthy!")
+
 
 # --- TAB 4: VENDOR TRACKER ---
 with tabs[3]:
