@@ -1,25 +1,27 @@
 import streamlit as st
-import pandas as pd
+import pd as pd
 import sqlite3
 from datetime import datetime, timedelta
 from fpdf import FPDF
 import io
 
 # ==========================================
-# 1. DATABASE SYSTEM (v16)
+# 1. DATABASE SYSTEM (v17)
 # ==========================================
 @st.cache_resource
 def get_connection():
-    conn = sqlite3.connect('kelly_ai_v16.db', check_same_thread=False)
+    conn = sqlite3.connect('kelly_ai_v17.db', check_same_thread=False)
     return conn
 
 def init_db():
     conn = get_connection()
     c = conn.cursor()
+    # Added login_password to the schema
     c.execute('''CREATE TABLE IF NOT EXISTS sales 
                  (id INTEGER PRIMARY KEY AUTOINCREMENT, 
                   customer_name TEXT, product_name TEXT, 
-                  login_email TEXT, amount_paid_naira REAL, 
+                  login_email TEXT, login_password TEXT,
+                  amount_paid_naira REAL, 
                   g2g_cost_usd REAL, exchange_rate REAL, profit REAL, 
                   purchase_date DATE, expiry_date DATE,
                   g2g_order_number TEXT, status TEXT, 
@@ -42,6 +44,7 @@ def create_receipt_pdf(data):
         ("Order Number", str(data['g2g_order_number'])),
         ("Customer Name", str(data['customer_name'])),
         ("Product", str(data['product_name'])),
+        ("Login Account", str(data['login_email'])),
         ("Amount Paid", f"N{data['amount_paid_naira']:,.2f}"),
         ("Purchase Date", str(data['purchase_date'])),
         ("Expiry Date", str(data['expiry_date']))
@@ -63,7 +66,7 @@ st.title("💰 Kelly AI Management Suite")
 
 tabs = st.tabs(["➕ New Sale", "🔍 Search & Manage", "📈 Insights & Restore", "📊 Reports", "🚩 Vendor Tracker"])
 
-# --- TAB 1: NEW SALE (Date Box Added) ---
+# --- TAB 1: NEW SALE ---
 with tabs[0]:
     st.header("Record Transaction")
     with st.form("sale_form", clear_on_submit=True):
@@ -73,9 +76,13 @@ with tabs[0]:
             prod = st.selectbox("Product", ["ChatGPT Plus", "CapCut Pro", "Canva Pro", "Claude Pro", "Super Grok"])
             order_no = st.text_input("G2G Order Number")
             paid = st.number_input("Customer Paid (NGN)", min_value=0.0)
-            # ADDED: Manual Date Selection
             manual_date = st.date_input("Purchase Date", datetime.now())
+        
         with col2:
+            # NEW INPUTS FOR ACCOUNT CREDENTIALS
+            acc_email = st.text_input("Account Email/Login")
+            acc_pass = st.text_input("Account Password")
+            
             usd = st.number_input("G2G Cost (USD)", min_value=0.0)
             rate = st.number_input("Rate (NGN/$)", value=1550.0)
             vendor = st.text_input("G2G Vendor Name")
@@ -83,18 +90,19 @@ with tabs[0]:
             initial_status = st.selectbox("Initial Account Status", ["Active", "Issue", "Refunded"])
         
         if st.form_submit_button("Save Sale"):
-            # Calculate expiry based on the chosen manual date
             e_date = manual_date + timedelta(days=duration)
             profit = paid - (usd * rate)
             
             conn = get_connection()
-            conn.execute('''INSERT INTO sales (customer_name, product_name, amount_paid_naira, 
-                            g2g_cost_usd, exchange_rate, profit, purchase_date, expiry_date, 
-                            g2g_order_number, status, vendor_name) 
-                            VALUES (?,?,?,?,?,?,?,?,?,?,?)''', 
-                         (cust, prod, paid, usd, rate, profit, manual_date, e_date, order_no, initial_status, vendor))
+            # Updated INSERT to include password
+            conn.execute('''INSERT INTO sales (customer_name, product_name, login_email, login_password, 
+                            amount_paid_naira, g2g_cost_usd, exchange_rate, profit, 
+                            purchase_date, expiry_date, g2g_order_number, status, vendor_name) 
+                            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)''', 
+                         (cust, prod, acc_email, acc_pass, paid, usd, rate, profit, 
+                          manual_date, e_date, order_no, initial_status, vendor))
             conn.commit()
-            st.success(f"Sale Recorded for {manual_date}!")
+            st.success(f"Sale Recorded for {cust} on {manual_date}!")
             st.rerun()
 
 # --- TAB 2: SEARCH & MANAGE ---
@@ -103,9 +111,10 @@ with tabs[1]:
     df = pd.read_sql("SELECT * FROM sales", get_connection())
     
     if not df.empty:
-        search = st.text_input("🔍 Search Name or Order #")
+        search = st.text_input("🔍 Search Name, Account, or Order #")
         if search:
             df = df[(df['customer_name'].str.contains(search, case=False)) | 
+                    (df['login_email'].str.contains(search, case=False)) |
                     (df['g2g_order_number'].str.contains(search, case=False))]
         
         st.dataframe(df, use_container_width=True)
@@ -132,7 +141,7 @@ with tabs[1]:
                 get_connection().commit()
                 st.rerun()
 
-# --- TAB 3: INSIGHTS & RESTORE (RE-UPLOAD ADDED HERE) ---
+# --- TAB 3: INSIGHTS & RESTORE ---
 with tabs[2]:
     st.header("📈 Growth & Data Restore")
     df_in = pd.read_sql("SELECT * FROM sales", get_connection())
@@ -144,22 +153,20 @@ with tabs[2]:
     
     st.divider()
     st.subheader("📤 Restore from Backup")
-    st.info("Upload your backup CSV file to add those records back to this app.")
-    
     uploaded_file = st.file_uploader("Choose your backup CSV file", type="csv")
     
     if uploaded_file is not None:
         if st.button("Process Restore"):
             backup_df = pd.read_csv(uploaded_file)
             conn = get_connection()
-            # We loop through the CSV and insert data
             for index, row in backup_df.iterrows():
                 conn.execute('''INSERT OR IGNORE INTO sales 
-                                (customer_name, product_name, amount_paid_naira, g2g_cost_usd, 
-                                 exchange_rate, profit, purchase_date, expiry_date, g2g_order_number, 
-                                 status, vendor_name) 
-                                VALUES (?,?,?,?,?,?,?,?,?,?,?)''', 
-                             (row['customer_name'], row['product_name'], row['amount_paid_naira'], 
+                                (customer_name, product_name, login_email, login_password, amount_paid_naira, 
+                                 g2g_cost_usd, exchange_rate, profit, purchase_date, expiry_date, 
+                                 g2g_order_number, status, vendor_name) 
+                                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)''', 
+                             (row['customer_name'], row['product_name'], row.get('login_email', ''), 
+                              row.get('login_password', ''), row['amount_paid_naira'], 
                               row['g2g_cost_usd'], row['exchange_rate'], row['profit'], 
                               row['purchase_date'], row['expiry_date'], row['g2g_order_number'], 
                               row['status'], row['vendor_name']))
@@ -167,7 +174,7 @@ with tabs[2]:
             st.success("Backup successfully integrated!")
             st.rerun()
 
-# --- TAB 4: FINANCIAL REPORTS & BACKUP ---
+# --- TAB 4: FINANCIAL REPORTS ---
 with tabs[3]:
     st.header("📊 Financial Reports")
     df_f = pd.read_sql("SELECT profit, purchase_date FROM sales", get_connection())
@@ -177,7 +184,6 @@ with tabs[3]:
         daily = df_f[df_f['purchase_date'] == today]['profit'].sum()
         st.metric("Today's Profit", f"N{daily:,.2f}")
         
-        # Download Button
         full_df = pd.read_sql("SELECT * FROM sales", get_connection())
         csv = full_df.to_csv(index=False).encode('utf-8')
         st.download_button("💾 Download Backup (CSV)", csv, f"kelly_backup_{today}.csv", "text/csv")
@@ -185,7 +191,7 @@ with tabs[3]:
 # --- TAB 5: VENDOR TRACKER ---
 with tabs[4]:
     st.header("🚩 Vendor Tracker")
-    query = "SELECT vendor_name, g2g_order_number, customer_name, status FROM sales WHERE status != 'Active'"
+    query = "SELECT vendor_name, g2g_order_number, customer_name, login_email, status FROM sales WHERE status != 'Active'"
     df_v = pd.read_sql(query, get_connection())
     if not df_v.empty:
         st.table(df_v)
