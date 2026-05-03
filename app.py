@@ -13,7 +13,7 @@ import io
 import os
 from datetime import datetime
 
-# ─── FPDF for PDF receipts ───────────────────────────────────────────────────
+# — FPDF for PDF receipts —————————————————
 
 try:
 from fpdf import FPDF
@@ -21,16 +21,16 @@ FPDF_AVAILABLE = True
 except ImportError:
 FPDF_AVAILABLE = False
 
-# ─── PAGE CONFIG ─────────────────────────────────────────────────────────────
+# — PAGE CONFIG ———————————————————––
 
 st.set_page_config(
 page_title=“Kelly AI Premium Tools”,
-page_icon=“🤖”,
+page_icon=”?”,
 layout=“wide”,
 initial_sidebar_state=“expanded”,
 )
 
-# ─── STYLING ─────────────────────────────────────────────────────────────────
+# — STYLING —————————————————————–
 
 st.markdown(”””
 
@@ -150,7 +150,7 @@ div[data-testid="stExpander"] {
 
 “””, unsafe_allow_html=True)
 
-# ─── DATABASE PATH ────────────────────────────────────────────────────────────
+# — DATABASE PATH ————————————————————
 
 DB_PATH = “kelly_ai_v33.db”
 
@@ -164,7 +164,7 @@ SECURITY_QUESTIONS = [
 “What was your childhood nickname?”,
 ]
 
-# ─── DB INIT ─────────────────────────────────────────────────────────────────
+# — DB INIT —————————————————————–
 
 def init_db():
 with sqlite3.connect(DB_PATH) as conn:
@@ -236,7 +236,7 @@ def gen_order_id() -> str:
 import random, string
 return “KAI-” + “”.join(random.choices(string.ascii_uppercase + string.digits, k=8))
 
-# ─── AUTH HELPERS ─────────────────────────────────────────────────────────────
+# — AUTH HELPERS ———————————————————––
 
 def login_user(email: str, password: str):
 email = email.lower().strip()
@@ -285,7 +285,7 @@ c = conn.cursor()
 c.execute(“UPDATE users SET password=? WHERE email=?”, (hash_pw(new_pw), email))
 conn.commit()
 
-# ─── SESSION STATE INIT ───────────────────────────────────────────────────────
+# — SESSION STATE INIT —————————————————––
 
 def init_session():
 defaults = {
@@ -302,7 +302,7 @@ for k in list(st.session_state.keys()):
 del st.session_state[k]
 st.rerun()
 
-# ─── PDF RECEIPT ──────────────────────────────────────────────────────────────
+# — PDF RECEIPT –––––––––––––––––––––––––––––––
 
 def generate_pdf_receipt(order_id, product, price_ngn, cust_email, sold_at):
 pdf = FPDF()
@@ -360,29 +360,29 @@ pdf.line(20, pdf.get_y(), 190, pdf.get_y())
 return bytes(pdf.output())
 ```
 
-# ─── AUTH PAGES ───────────────────────────────────────────────────────────────
+# — AUTH PAGES —————————————————————
 
 def page_login():
-st.markdown(”<h1 style='text-align:center;color:#818cf8;'>🤖 Kelly AI Premium Tools</h1>”, unsafe_allow_html=True)
+st.markdown(”<h1 style='text-align:center;color:#818cf8;'>? Kelly AI Premium Tools</h1>”, unsafe_allow_html=True)
 st.markdown(”<p style='text-align:center;color:#64748b;'>Your gateway to premium AI tools</p>”, unsafe_allow_html=True)
 st.markdown(”—”)
 
 ```
-tab_login, tab_register, tab_reset = st.tabs(["🔐 Login", "📝 Register", "🔑 Reset Password"])
+tab_login, tab_register, tab_reset = st.tabs(["? Login", "? Register", "? Reset Password"])
 
 with tab_login:
     st.markdown("### Sign In")
     email = st.text_input("Email", key="li_email", placeholder="you@example.com")
-    password = st.text_input("Password", type="password", key="li_pw", placeholder="••••••••")
-    if st.button("Login →", key="btn_login"):
+    password = st.text_input("Password", type="password", key="li_pw", placeholder="????????")
+    if st.button("Login ?", key="btn_login"):
         if not email or not password:
             st.warning("Please fill in all fields.")
         else:
             row = login_user(email, password)
             if not row:
-                st.error("❌ Invalid email or password.")
+                st.error("? Invalid email or password.")
             elif row[4] == "Banned":
-                st.error("🚫 Your account has been banned. Contact support.")
+                st.error("? Your account has been banned. Contact support.")
             else:
                 st.session_state.auth = True
                 st.session_state.user_id = row[0]
@@ -390,7 +390,7 @@ with tab_login:
                 st.session_state.email = row[2]
                 st.session_state.role = row[3]
                 st.session_state.page = "dashboard"
-                st.success(f"Welcome back, {row[1]}! 🎉")
+                st.success(f"Welcome back, {row[1]}! ?")
                 st.rerun()
 
 with tab_register:
@@ -404,7 +404,7 @@ with tab_register:
         r_pw2 = st.text_input("Confirm Password", type="password", key="r_pw2", placeholder="Repeat password")
     r_sq = st.selectbox("Security Question", SECURITY_QUESTIONS, key="r_sq")
     r_sa = st.text_input("Security Answer", key="r_sa", placeholder="Your answer (remembered exactly)")
-    if st.button("Create Account →", key="btn_reg"):
+    if st.button("Create Account ?", key="btn_reg"):
         if not all([r_name, r_email, r_pw, r_pw2, r_sa]):
             st.warning("All fields are required.")
         elif r_pw != r_pw2:
@@ -414,15 +414,15 @@ with tab_register:
         else:
             ok, msg = register_user(r_name, r_email, r_pw, r_sq, r_sa)
             if ok:
-                st.success(f"✅ {msg} Please login.")
+                st.success(f"? {msg} Please login.")
             else:
-                st.error(f"❌ {msg}")
+                st.error(f"? {msg}")
 
 with tab_reset:
     st.markdown("### Reset Password (No Email Required)")
-    st.info("💡 Answer your security question to reset your password — no email needed.")
+    st.info("? Answer your security question to reset your password -- no email needed.")
     rs_email = st.text_input("Your Email", key="rs_email", placeholder="Registered email")
-    if st.button("Fetch My Question →", key="btn_fetch_q"):
+    if st.button("Fetch My Question ?", key="btn_fetch_q"):
         if not rs_email:
             st.warning("Enter your email first.")
         else:
@@ -437,35 +437,35 @@ with tab_reset:
     if st.session_state.get("fetched_q"):
         st.markdown(f"**Question:** {st.session_state['fetched_q']}")
         rs_ans = st.text_input("Your Answer", key="rs_ans", placeholder="Your security answer")
-        if st.button("Verify Answer →", key="btn_verify"):
+        if st.button("Verify Answer ?", key="btn_verify"):
             if verify_security_answer(st.session_state.reset_email, rs_ans):
                 st.session_state.reset_verified = True
-                st.success("✅ Answer verified! Set your new password below.")
+                st.success("? Answer verified! Set your new password below.")
             else:
-                st.error("❌ Incorrect answer.")
+                st.error("? Incorrect answer.")
 
         if st.session_state.reset_verified:
             new_pw = st.text_input("New Password", type="password", key="new_pw")
             new_pw2 = st.text_input("Confirm New Password", type="password", key="new_pw2")
-            if st.button("Reset Password →", key="btn_reset_pw"):
+            if st.button("Reset Password ?", key="btn_reset_pw"):
                 if new_pw != new_pw2:
                     st.error("Passwords do not match.")
                 elif len(new_pw) < 6:
                     st.error("Password must be at least 6 characters.")
                 else:
                     reset_password(st.session_state.reset_email, new_pw)
-                    st.success("🔓 Password reset! You can now login.")
+                    st.success("? Password reset! You can now login.")
                     st.session_state.reset_verified = False
                     del st.session_state["fetched_q"]
 ```
 
-# ─── SIDEBAR ──────────────────────────────────────────────────────────────────
+# — SIDEBAR ——————————————————————
 
 def render_sidebar():
 with st.sidebar:
 st.markdown(”””
 <div style='text-align:center;padding:20px 0 10px;'>
-<span style='font-size:48px;'>🤖</span>
+<span style='font-size:48px;'>?</span>
 <h2 style='font-family:Syne,sans-serif;color:#818cf8;margin:6px 0 2px;'>Kelly AI</h2>
 <p style='color:#475569;font-size:12px;margin:0;'>Premium Tools Platform</p>
 </div>
@@ -477,30 +477,30 @@ st.markdown(f”””
 <p style='color:#c7d2fe;font-size:12px;margin:0;'>WELCOME BACK</p>
 <p style='color:#e2e8f0;font-weight:700;font-size:16px;margin:4px 0 2px;'>{st.session_state.name}</p>
 <p style='color:#818cf8;font-size:12px;margin:0;'>{st.session_state.email}</p>
-<p style='color:#34d399;font-size:11px;margin:4px 0 0;'>● {‘Admin’ if st.session_state.role==‘admin’ else ‘Customer’}</p>
+<p style='color:#34d399;font-size:11px;margin:4px 0 0;'>? {‘Admin’ if st.session_state.role==‘admin’ else ‘Customer’}</p>
 </div>
 “””, unsafe_allow_html=True)
 st.markdown(””)
-if st.button(“🚪 Logout”, use_container_width=True):
+if st.button(”? Logout”, use_container_width=True):
 logout()
 
-# ─── ADMIN DASHBOARD ──────────────────────────────────────────────────────────
+# — ADMIN DASHBOARD –––––––––––––––––––––––––––––
 
 def admin_dashboard():
-st.markdown(”<h1>⚙️ Admin Dashboard</h1>”, unsafe_allow_html=True)
+st.markdown(”<h1>?? Admin Dashboard</h1>”, unsafe_allow_html=True)
 st.markdown(”—”)
 
 ```
-tabs = st.tabs(["📦 Delivery", "🛠️ Tool Manager", "👥 Users", "📋 Inventory", "📊 Reports", "💾 Backup"])
+tabs = st.tabs(["? Delivery", "?? Tool Manager", "? Users", "? Inventory", "? Reports", "? Backup"])
 
-# ── TAB 1: DELIVERY ───────────────────────────────────────────────────────
+# -- TAB 1: DELIVERY -------------------------------------------------------
 with tabs[0]:
-    st.markdown("### 📦 Record New Delivery")
+    st.markdown("### ? Record New Delivery")
     with sqlite3.connect(DB_PATH) as conn:
         tools_df = pd.read_sql("SELECT name FROM products ORDER BY name", conn)
 
     if tools_df.empty:
-        st.warning("⚠️ No tools found. Add tools in the **🛠️ Tool Manager** tab first.")
+        st.warning("?? No tools found. Add tools in the **?? Tool Manager** tab first.")
     else:
         tool_names = tools_df["name"].tolist()
         with st.form("delivery_form"):
@@ -515,9 +515,9 @@ with tabs[0]:
                 d_g2g_id = st.text_input("G2G Order ID")
                 d_price = st.number_input("Sold Price (NGN)", min_value=0.0, step=100.0)
                 d_cost = st.number_input("Cost (USD)", min_value=0.0, step=0.5)
-                d_rate = st.number_input("Exchange Rate (₦/USD)", min_value=0.0, value=1600.0)
+                d_rate = st.number_input("Exchange Rate (?/USD)", min_value=0.0, value=1600.0)
 
-            submit_d = st.form_submit_button("✅ Record Delivery", use_container_width=True)
+            submit_d = st.form_submit_button("? Record Delivery", use_container_width=True)
             if submit_d:
                 if not d_email:
                     st.error("Customer email is required.")
@@ -533,11 +533,11 @@ with tabs[0]:
                         """, (oid, d_email.lower().strip(), d_login, d_password,
                               d_product, d_vendor, d_g2g_id, d_price, d_cost, d_rate, profit))
                         conn.commit()
-                    st.success(f"✅ Delivery recorded! Order ID: **{oid}** | Profit: ₦{profit:,.2f}")
+                    st.success(f"? Delivery recorded! Order ID: **{oid}** | Profit: ?{profit:,.2f}")
 
-# ── TAB 2: TOOL MANAGER ────────────────────────────────────────────────────
+# -- TAB 2: TOOL MANAGER ----------------------------------------------------
 with tabs[1]:
-    st.markdown("### 🛠️ Tool Manager — Command Center")
+    st.markdown("### ?? Tool Manager -- Command Center")
     with st.form("add_product_form"):
         col1, col2 = st.columns([2, 1])
         with col1:
@@ -545,7 +545,7 @@ with tabs[1]:
             p_desc = st.text_area("Description", placeholder="Brief description for customers...")
         with col2:
             p_price = st.number_input("Price (NGN)", min_value=0.0, step=100.0)
-        if st.form_submit_button("➕ Add Tool", use_container_width=True):
+        if st.form_submit_button("? Add Tool", use_container_width=True):
             if not p_name:
                 st.error("Product name required.")
             else:
@@ -554,7 +554,7 @@ with tabs[1]:
                         conn.execute("INSERT INTO products (name,price,description) VALUES (?,?,?)",
                                      (p_name, p_price, p_desc))
                         conn.commit()
-                    st.success(f"✅ '{p_name}' added to marketplace!")
+                    st.success(f"? '{p_name}' added to marketplace!")
                 except sqlite3.IntegrityError:
                     st.error("A product with that name already exists.")
 
@@ -567,16 +567,16 @@ with tabs[1]:
         st.dataframe(prod_df, use_container_width=True)
         st.markdown("#### Remove a Product")
         del_name = st.selectbox("Select product to delete", prod_df["name"].tolist(), key="del_prod")
-        if st.button("🗑️ Delete Product", key="btn_del_prod"):
+        if st.button("?? Delete Product", key="btn_del_prod"):
             with sqlite3.connect(DB_PATH) as conn:
                 conn.execute("DELETE FROM products WHERE name=?", (del_name,))
                 conn.commit()
             st.success(f"Deleted '{del_name}'.")
             st.rerun()
 
-# ── TAB 3: USER MANAGEMENT ────────────────────────────────────────────────
+# -- TAB 3: USER MANAGEMENT ------------------------------------------------
 with tabs[2]:
-    st.markdown("### 👥 User Management")
+    st.markdown("### ? User Management")
     with sqlite3.connect(DB_PATH) as conn:
         users_df = pd.read_sql(
             "SELECT id, name, email, role, status, created_at FROM users ORDER BY created_at DESC", conn)
@@ -591,7 +591,7 @@ with tabs[2]:
             user_row = users_df[users_df["email"] == selected_email].iloc[0]
             curr_status = user_row["status"]
             new_status = "Banned" if curr_status == "Active" else "Active"
-            btn_label = f"🚫 Ban User" if curr_status == "Active" else "✅ Unban User"
+            btn_label = f"? Ban User" if curr_status == "Active" else "? Unban User"
             if st.button(btn_label, key="btn_ban"):
                 with sqlite3.connect(DB_PATH) as conn:
                     conn.execute("UPDATE users SET status=? WHERE email=?", (new_status, selected_email))
@@ -601,9 +601,9 @@ with tabs[2]:
         else:
             st.info("No customer accounts to manage.")
 
-# ── TAB 4: INVENTORY & TRACKING ───────────────────────────────────────────
+# -- TAB 4: INVENTORY & TRACKING -------------------------------------------
 with tabs[3]:
-    st.markdown("### 📋 Sales Inventory & Tracking")
+    st.markdown("### ? Sales Inventory & Tracking")
     with sqlite3.connect(DB_PATH) as conn:
         sales_df = pd.read_sql("SELECT * FROM sales ORDER BY sold_at DESC", conn)
 
@@ -615,38 +615,38 @@ with tabs[3]:
         col_r, col_s = st.columns(2)
 
         with col_r:
-            st.markdown("#### 🧾 Download PDF Receipt")
+            st.markdown("#### ? Download PDF Receipt")
             if not FPDF_AVAILABLE:
                 st.warning("Install `fpdf2` to enable PDF receipts: `pip install fpdf2`")
             else:
                 r_oid = st.selectbox("Select Order ID", sales_df["order_id"].tolist(), key="receipt_oid")
-                if st.button("📄 Generate Receipt"):
+                if st.button("? Generate Receipt"):
                     row = sales_df[sales_df["order_id"] == r_oid].iloc[0]
                     pdf_bytes = generate_pdf_receipt(
                         row["order_id"], row["product_name"],
                         row["price_ngn"], row["cust_email"], row["sold_at"]
                     )
                     st.download_button(
-                        label="⬇️ Download Receipt PDF",
+                        label="?? Download Receipt PDF",
                         data=pdf_bytes,
                         file_name=f"receipt_{r_oid}.pdf",
                         mime="application/pdf"
                     )
 
         with col_s:
-            st.markdown("#### 🔄 Update Order Status")
+            st.markdown("#### ? Update Order Status")
             s_oid = st.selectbox("Select Order", sales_df["order_id"].tolist(), key="status_oid")
             s_status = st.selectbox("New Status", ["Active", "Issue", "Refunded"], key="new_status")
             if st.button("Update Status", key="btn_upd_status"):
                 with sqlite3.connect(DB_PATH) as conn:
                     conn.execute("UPDATE sales SET status=? WHERE order_id=?", (s_status, s_oid))
                     conn.commit()
-                st.success(f"Order {s_oid} → **{s_status}**")
+                st.success(f"Order {s_oid} ? **{s_status}**")
                 st.rerun()
 
-# ── TAB 5: REPORTS ────────────────────────────────────────────────────────
+# -- TAB 5: REPORTS --------------------------------------------------------
 with tabs[4]:
-    st.markdown("### 📊 Profit Reports")
+    st.markdown("### ? Profit Reports")
     with sqlite3.connect(DB_PATH) as conn:
         sales_df = pd.read_sql("SELECT * FROM sales", conn)
 
@@ -659,15 +659,15 @@ with tabs[4]:
         avg_profit = sales_df["profit"].mean()
 
         c1, c2, c3, c4 = st.columns(4)
-        c1.metric("💰 Total Profit (₦)", f"₦{total_profit:,.2f}")
-        c2.metric("📈 Total Revenue (₦)", f"₦{total_revenue:,.2f}")
-        c3.metric("🛒 Total Orders", total_orders)
-        c4.metric("📊 Avg Profit/Order", f"₦{avg_profit:,.2f}")
+        c1.metric("? Total Profit (?)", f"?{total_profit:,.2f}")
+        c2.metric("? Total Revenue (?)", f"?{total_revenue:,.2f}")
+        c3.metric("? Total Orders", total_orders)
+        c4.metric("? Avg Profit/Order", f"?{avg_profit:,.2f}")
 
         st.markdown("---")
         st.markdown("#### Profit by Product")
         by_product = sales_df.groupby("product_name")["profit"].sum().reset_index()
-        by_product.columns = ["Product", "Total Profit (₦)"]
+        by_product.columns = ["Product", "Total Profit (?)"]
         st.bar_chart(by_product.set_index("Product"))
 
         st.markdown("#### Orders by Status")
@@ -675,13 +675,13 @@ with tabs[4]:
         by_status.columns = ["Status", "Count"]
         st.dataframe(by_status, use_container_width=True)
 
-# ── TAB 6: BACKUP & RESTORE ───────────────────────────────────────────────
+# -- TAB 6: BACKUP & RESTORE -----------------------------------------------
 with tabs[5]:
-    st.markdown("### 💾 Backup & Restore")
+    st.markdown("### ? Backup & Restore")
     col_b, col_rest = st.columns(2)
 
     with col_b:
-        st.markdown("#### ⬇️ Export Sales as CSV")
+        st.markdown("#### ?? Export Sales as CSV")
         with sqlite3.connect(DB_PATH) as conn:
             bk_df = pd.read_sql("SELECT * FROM sales", conn)
         if bk_df.empty:
@@ -689,7 +689,7 @@ with tabs[5]:
         else:
             csv_data = bk_df.to_csv(index=False).encode("utf-8")
             st.download_button(
-                "📥 Download Backup CSV",
+                "? Download Backup CSV",
                 data=csv_data,
                 file_name=f"kelly_ai_backup_{datetime.now().strftime('%Y%m%d_%H%M')}.csv",
                 mime="text/csv",
@@ -697,45 +697,45 @@ with tabs[5]:
             )
 
     with col_rest:
-        st.markdown("#### ⬆️ Restore / Append from CSV")
+        st.markdown("#### ?? Restore / Append from CSV")
         uploaded = st.file_uploader("Upload CSV backup", type=["csv"])
         if uploaded:
             try:
                 restore_df = pd.read_csv(uploaded)
                 st.dataframe(restore_df.head(5), use_container_width=True)
-                if st.button("✅ Append to Database", use_container_width=True):
+                if st.button("? Append to Database", use_container_width=True):
                     with sqlite3.connect(DB_PATH) as conn:
                         restore_df.to_sql("sales", conn, if_exists="append", index=False)
                         conn.commit()
-                    st.success(f"✅ {len(restore_df)} rows appended successfully!")
+                    st.success(f"? {len(restore_df)} rows appended successfully!")
                     st.rerun()
             except Exception as e:
                 st.error(f"Error reading file: {e}")
 ```
 
-# ─── CUSTOMER PORTAL ──────────────────────────────────────────────────────────
+# — CUSTOMER PORTAL –––––––––––––––––––––––––––––
 
 def customer_portal():
-st.markdown(f”<h1>👋 Hello, {st.session_state.name}!</h1>”, unsafe_allow_html=True)
+st.markdown(f”<h1>? Hello, {st.session_state.name}!</h1>”, unsafe_allow_html=True)
 st.markdown(”—”)
 
 ```
-tabs = st.tabs(["🔓 My Tools", "🛒 Marketplace", "💬 Support"])
+tabs = st.tabs(["? My Tools", "? Marketplace", "? Support"])
 
-# ── MY TOOLS ──────────────────────────────────────────────────────────────
+# -- MY TOOLS --------------------------------------------------------------
 with tabs[0]:
-    st.markdown("### 🔓 My Active Tools")
+    st.markdown("### ? My Active Tools")
     with sqlite3.connect(DB_PATH) as conn:
         my_sales = pd.read_sql(
             "SELECT * FROM sales WHERE cust_email=? ORDER BY sold_at DESC",
             conn, params=(st.session_state.email,))
 
     if my_sales.empty:
-        st.info("🛍️ You have no active tools. Visit the **🛒 Marketplace** to purchase!")
+        st.info("?? You have no active tools. Visit the **? Marketplace** to purchase!")
     else:
         st.success(f"You have **{len(my_sales)}** tool(s) in your account.")
         for _, row in my_sales.iterrows():
-            with st.expander(f"🔧 {row['product_name']} — Order {row['order_id']} [{row['status']}]"):
+            with st.expander(f"? {row['product_name']} -- Order {row['order_id']} [{row['status']}]"):
                 col1, col2 = st.columns(2)
                 with col1:
                     st.markdown(f"**Login / Email:** `{row['cust_login'] or 'N/A'}`")
@@ -743,17 +743,17 @@ with tabs[0]:
                 with col2:
                     st.markdown(f"**Order ID:** `{row['order_id']}`")
                     st.markdown(f"**Purchased:** {row['sold_at']}")
-                    status_color = {"Active": "🟢", "Issue": "🟡", "Refunded": "🔴"}.get(row["status"], "⚪")
+                    status_color = {"Active": "?", "Issue": "?", "Refunded": "?"}.get(row["status"], "?")
                     st.markdown(f"**Status:** {status_color} {row['status']}")
 
-# ── MARKETPLACE ───────────────────────────────────────────────────────────
+# -- MARKETPLACE -----------------------------------------------------------
 with tabs[1]:
-    st.markdown("### 🛒 Tool Marketplace")
+    st.markdown("### ? Tool Marketplace")
     with sqlite3.connect(DB_PATH) as conn:
         products = pd.read_sql("SELECT * FROM products ORDER BY name", conn)
 
     if products.empty:
-        st.warning("⚠️ No tools available yet. Check back soon!")
+        st.warning("?? No tools available yet. Check back soon!")
     else:
         cols = st.columns(2)
         for i, (_, prod) in enumerate(products.iterrows()):
@@ -765,20 +765,20 @@ with tabs[1]:
                 st.markdown(f"""
                 <div class='tool-card'>
                     <h3 style='color:#818cf8;font-family:Syne,sans-serif;margin-bottom:6px;'>{prod['name']}</h3>
-                    <p style='color:#34d399;font-size:22px;font-weight:700;margin:4px 0;'>₦{prod['price']:,.0f}</p>
+                    <p style='color:#34d399;font-size:22px;font-weight:700;margin:4px 0;'>?{prod['price']:,.0f}</p>
                     <p style='color:#94a3b8;font-size:14px;margin:8px 0 16px;'>{prod['description'] or 'Premium AI tool access.'}</p>
                     <a href='{wa_link}' target='_blank'
                        style='background:linear-gradient(135deg,#25d366,#128c7e);
                               color:white;padding:10px 20px;border-radius:8px;
                               text-decoration:none;font-weight:700;font-size:14px;'>
-                       💬 Buy on WhatsApp
+                       ? Buy on WhatsApp
                     </a>
                 </div>
                 """, unsafe_allow_html=True)
 
-# ── SUPPORT ───────────────────────────────────────────────────────────────
+# -- SUPPORT ---------------------------------------------------------------
 with tabs[2]:
-    st.markdown("### 💬 Customer Support")
+    st.markdown("### ? Customer Support")
     st.markdown("""
     <div class='card'>
         <h3 style='color:#818cf8;'>Contact Us Instantly</h3>
@@ -788,13 +788,13 @@ with tabs[2]:
            style='background:linear-gradient(135deg,#25d366,#128c7e);
                   color:white;padding:12px 28px;border-radius:10px;
                   text-decoration:none;font-weight:700;font-size:15px;margin-right:16px;'>
-           📱 WhatsApp Support
+           ? WhatsApp Support
         </a>
         <a href='https://t.me/kellyaitools' target='_blank'
            style='background:linear-gradient(135deg,#229ed9,#2aabee);
                   color:white;padding:12px 28px;border-radius:10px;
                   text-decoration:none;font-weight:700;font-size:15px;'>
-           ✈️ Telegram Support
+           ?? Telegram Support
         </a>
         <br><br>
         <p style='color:#64748b;font-size:13px;'>
@@ -804,7 +804,7 @@ with tabs[2]:
     """, unsafe_allow_html=True)
 ```
 
-# ─── MAIN ROUTER ──────────────────────────────────────────────────────────────
+# — MAIN ROUTER –––––––––––––––––––––––––––––––
 
 def main():
 init_db()
